@@ -1,25 +1,133 @@
-import logo from './logo.svg';
-import './App.css';
+import React from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
+import { AppProvider } from "@toolpad/core";
+import { Box, createTheme } from "@mui/material";
+import AbbsiumLogo from "./Pictures/abbsium192.png";
+import PaymentsIcon from "@mui/icons-material/Payments";
+import BrushIcon from "@mui/icons-material/Brush";
+import ContactsIcon from "@mui/icons-material/Contacts";
+import HomeRepairServiceIcon from "@mui/icons-material/HomeRepairService";
+import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 
-function App() {
+const NAVIGATION = [
+  {
+    kind: "header",
+    title: "Web Sites",
+  },
+  {
+    segment: "dashboard",
+    title: "Dashboard",
+    icon: <DashboardIcon />,
+  },
+  {
+    segment: "services",
+    title: "Services",
+    icon: <HomeRepairServiceIcon />,
+  },
+  {
+    segment: "prices",
+    title: "Prices",
+    icon: <PaymentsIcon />,
+  },
+  {
+    segment: "contacts",
+    title: "Contact",
+    icon: <ContactsIcon />,
+  },
+  {
+    kind: "divider",
+  },
+  {
+    kind: "header",
+    title: "Subscriptions",
+  },
+  {
+    segment: "orders",
+    title: "Orders",
+    icon: <ShoppingCartIcon />,
+  },
+  {
+    segment: "carpentry-Design",
+    title: "Carpentry Design",
+    icon: <BrushIcon />,
+  },
+  {
+    kind: "divider",
+  },
+  {
+    kind: "header",
+    title: "Earn Money",
+  },
+  {
+    segment: "make-money",
+    title: "Games",
+    icon: <AttachMoneyIcon />,
+  },
+];
+
+const demoTheme = createTheme({
+  cssVariables: {
+    colorSchemeSelector: "data-toolpad-color-scheme",
+  },
+  colorSchemes: { light: true, dark: false },
+});
+
+export default function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const router = {
+    navigate: (path) => navigate(path),
+    pathname: location.pathname,
+  };
+
+  const [session, setSession] = React.useState({
+    user: {
+      name: "Yordan Martinez Valladares",
+      email: "yordan.j.martinez@gmail.com",
+      image: "https://avatars.githubusercontent.com/u/103406224",
+    },
+  });
+
+  const authentication = React.useMemo(() => {
+    return {
+      signIn: () => {
+        setSession({
+          user: {
+            name: "Yordan Martinez Valladares",
+            email: "yordan.j.martinez@gmail.com",
+            image: "https://avatars.githubusercontent.com/u/103406224",
+          },
+        });
+      },
+      signOut: () => {
+        setSession(null);
+      },
+    };
+  }, []);
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <AppProvider
+      session={session}
+      navigation={NAVIGATION}
+      authentication={authentication}
+      router={router}
+      theme={demoTheme}
+      branding={{
+        logo: (
+          <Box
+            component="img"
+            src={AbbsiumLogo}
+            alt="Abbsium Logo"
+            height={25}
+          />
+        ),
+        title: "Abbsium",
+      }}
+    >
+      <Outlet />
+    </AppProvider>
   );
 }
-
-export default App;
