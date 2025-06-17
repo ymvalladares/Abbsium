@@ -1,14 +1,6 @@
 import React from "react";
 
-import {
-  Alert,
-  Box,
-  Container,
-  Grid,
-  Stack,
-  Typography,
-  useTheme,
-} from "@mui/material";
+import { Box, Grid, Stack, Typography } from "@mui/material";
 import CardsPrices from "../ReusableComp/CardsPrices";
 import Footer from "../Components/Footer";
 
@@ -31,30 +23,11 @@ const packageContainer = [
   ],
 ];
 
-const specialPackage = [
-  "Business Consultation",
-  "Professional Design",
-  "Responsive",
-  "Free Icon Design",
-  "Limited Updates",
-];
-
-const prmiunPackage = [
-  "Include Special Package",
-  "Host and Domain",
-  "CEO Optimization",
-  "Internet Deployment",
-  "Bussiness Email",
-  "Smart ChatBots",
-  "Unlimited Updates",
-];
-
 const offer = ["Special Offer!", "Premiun !!!"];
 const price = ["149.99", "46.99"];
 const subscription = ["On Time", "Month"];
 
 const Prices = () => {
-  const theme = useTheme();
   return (
     <>
       <Box

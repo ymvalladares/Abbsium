@@ -6,7 +6,6 @@ import {
   ListItem,
   ListItemText,
   Container,
-  useTheme,
 } from "@mui/material";
 import GppGoodIcon from "@mui/icons-material/GppGood";
 import PublicIcon from "@mui/icons-material/Public";
@@ -14,8 +13,6 @@ import EmailIcon from "@mui/icons-material/Email";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 
 export default function PrivacyPolicy() {
-  const theme = useTheme();
-
   return (
     <Container maxWidth="md">
       <Box

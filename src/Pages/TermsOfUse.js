@@ -10,7 +10,6 @@ import {
 import GavelIcon from "@mui/icons-material/Gavel";
 import PublicIcon from "@mui/icons-material/Public";
 import VerifiedUserIcon from "@mui/icons-material/VerifiedUser";
-import LockIcon from "@mui/icons-material/Lock";
 
 export default function TermsOfUse() {
   return (

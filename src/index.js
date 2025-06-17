@@ -13,6 +13,7 @@ import Prices from "./Pages/Prices";
 import Services from "./Pages/Services";
 import PrivacyPolicy from "./Pages/PrivacyPolicy";
 import TermsOfUse from "./Pages/TermsOfUse";
+import Games from "./Pages/Games";
 
 const router = createBrowserRouter([
   {
@@ -49,6 +50,10 @@ const router = createBrowserRouter([
           {
             path: "/contacts",
             Component: Contacts,
+          },
+          {
+            path: "/make-money",
+            Component: Games,
           },
           {
             path: "/privacy-policy",
