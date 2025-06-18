@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Redirecting...</title>
+    <script type="text/javascript">
+      // Redirige a index.html con la ruta original como query param
+      const redirectTo =
+        "/" +
+        "?redirect=" +
+        encodeURIComponent(
+          window.location.pathname +
+            window.location.search +
+            window.location.hash
+        );
+      window.location.replace(redirectTo);
+    </script>
+  </head>
+  <body>
+    <p>Redirecting...</p>
+  </body>
+</html>

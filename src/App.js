@@ -78,6 +78,16 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // 🔁 Detecta si viene una redirección desde 404.html y navega a la ruta original
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const redirect = params.get("redirect");
+
+    if (redirect && location.pathname === "/") {
+      navigate(redirect, { replace: true });
+    }
+  }, [location, navigate]);
+
   const router = {
     navigate: (path) => navigate(path),
     pathname: location.pathname,
