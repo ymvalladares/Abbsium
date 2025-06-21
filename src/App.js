@@ -61,8 +61,8 @@ const NAVIGATION = [
     title: "Earn Money",
   },
   {
-    segment: "make-money",
-    title: "Games",
+    segment: "investments",
+    title: "Investments",
     icon: <AttachMoneyIcon />,
   },
 ];

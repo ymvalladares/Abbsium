@@ -44,7 +44,7 @@ const router = createBrowserRouter([
             Component: Orders,
           },
           {
-            path: "/carpentry-Design",
+            path: "/carpentry-design",
             Component: CarpentryDesign,
           },
           {
@@ -52,7 +52,7 @@ const router = createBrowserRouter([
             Component: Contacts,
           },
           {
-            path: "/make-money",
+            path: "/investments",
             Component: Games,
           },
           {
@@ -67,20 +67,6 @@ const router = createBrowserRouter([
       },
     ],
   },
-  // {
-  //   path: "/auth",
-  //   Component: AuthLayout,
-  //   children: [
-  //     {
-  //       path: "login",
-  //       Component: Login,
-  //     },
-  //     {
-  //       path: "register",
-  //       Component: Register,
-  //     },
-  //   ],
-  // },
 ]);
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
