@@ -49,7 +49,7 @@ const NAVIGATION = [
     icon: <ShoppingCartIcon />,
   },
   {
-    segment: "carpentry-Design",
+    segment: "carpentry-design",
     title: "Carpentry Design",
     icon: <BrushIcon />,
   },

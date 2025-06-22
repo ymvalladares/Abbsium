@@ -23,7 +23,7 @@ function CustomAppTitle() {
 function SidebarFooter({ mini }) {
   return (
     <>
-      <Box
+      {/* <Box
         sx={{
           display: "flex",
           flexDirection: "column",
@@ -35,7 +35,7 @@ function SidebarFooter({ mini }) {
         <Box
           sx={{
             width: "92%", // Adjust as needed
-            height: "105px", // Or a specific height
+            height: "100px", // Or a specific height
             textAlign: "center",
             borderRadius: 2,
             border: "2px solid #E3F0FE",
@@ -43,7 +43,7 @@ function SidebarFooter({ mini }) {
         >
           Bottom-Center Box
         </Box>
-      </Box>
+      </Box> */}
       <Typography
         textAlign="center"
         variant="caption"
