@@ -11,6 +11,7 @@ import {
   Alert,
 } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import CancelIcon from "@mui/icons-material/Cancel";
 
 const CardsPrices = (props) => {
   return (
@@ -79,19 +80,27 @@ const CardsPrices = (props) => {
           {props.packageContainer.map((text, index) => (
             <ListItem sx={{ m: -2 }} key={index}>
               <ListItemIcon>
-                <CheckCircleIcon sx={{ color: "green" }} />
+                {text.type ? (
+                  <CheckCircleIcon sx={{ color: "green" }} />
+                ) : (
+                  <CancelIcon sx={{ color: "red" }} />
+                )}
               </ListItemIcon>
-              <ListItemText primary={text} />
+              <ListItemText primary={text.label} />
             </ListItem>
           ))}
         </List>
       </Box>
 
-      <Alert sx={{ borderRadius: 3 }} severity="info">
-        <Typography variant="body2" fontWeight="bold" color="text.primary">
-          Customer support 24h
-        </Typography>
-      </Alert>
+      {props.offer !== "Basic !!!" ? (
+        <Alert sx={{ borderRadius: 3 }} severity="info">
+          <Typography variant="body2" fontWeight="bold" color="text.primary">
+            Customer support 24h
+          </Typography>
+        </Alert>
+      ) : (
+        ""
+      )}
 
       {/* Button */}
       <Button

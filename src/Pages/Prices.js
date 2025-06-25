@@ -1,47 +1,62 @@
 import React from "react";
-
 import { Box, Grid, Stack, Typography } from "@mui/material";
 import CardsPrices from "../ReusableComp/CardsPrices";
 import Footer from "../Components/Footer";
 
-const packageContainer = [
-  [
-    "Business Consultation",
-    "Professional Design",
-    "Responsive",
-    "Free Icon Design",
-    "Limited Updates",
-  ],
-  [
-    "Special Package (Add)",
-    "Host and Domain",
-    "CEO Optimization",
-    "Internet Deployment",
-    "Bussiness Email",
-    "Smart ChatBots",
-    "Unlimited Updates",
-  ],
+const plans = [
+  {
+    offer: "Basic !!!",
+    price: "149.99",
+    subscription: "On Time",
+    features: [
+      { label: "Professional Design", type: true },
+      { label: "Responsive", type: true },
+      { label: "Free Icon Design", type: true },
+      { label: "Code Ownership", type: true },
+      { label: "Host and Domain", type: false },
+      { label: "Internet Deployment", type: false },
+    ],
+  },
+  {
+    offer: "Advance !!!",
+    price: "32.99",
+    subscription: "Month",
+    features: [
+      { label: "Basic Plan (Add)", type: true },
+      { label: "Host and Domain", type: true },
+      { label: "Internet Deployment", type: true },
+      { label: "Unlimited Updates", type: true },
+      { label: "Whatsapp Bot", type: true },
+      { label: "Business Email", type: false },
+      { label: "Google Business", type: false },
+    ],
+  },
+  {
+    offer: "Premium !!!",
+    price: "46.99",
+    subscription: "Month",
+    features: [
+      { label: "Advance Plan (Add)", type: true },
+      { label: "Business Email", type: true },
+      { label: "Google Business", type: true },
+      { label: "Smart ChatBots", type: true },
+    ],
+  },
 ];
-
-const offer = ["Special Offer!", "Premiun !!!"];
-const price = ["149.99", "46.99"];
-const subscription = ["On Time", "Month"];
 
 const Prices = () => {
   return (
     <>
       <Box
         mt={{ xs: -3, md: -7 }}
-        mb={2}
+        //mb={2}
         sx={{
           textAlign: "center",
           py: { xs: 6, md: 10 },
-          background: "#FFF",
           background:
             "linear-gradient(350deg,rgba(255, 255, 255, 1) 56%, rgba(216, 246, 255, 1) 80%)",
         }}
       >
-        {/* Text Content */}
         <Stack
           sx={{
             padding: "20px 10px 0",
@@ -54,10 +69,7 @@ const Prices = () => {
           alignItems="center"
         >
           <Typography
-            sx={{
-              color: "#0399DF",
-              letterSpacing: 1,
-            }}
+            sx={{ color: "#0399DF", letterSpacing: 1 }}
             variant="h5"
             fontWeight={700}
           >
@@ -82,21 +94,16 @@ const Prices = () => {
         </Stack>
       </Box>
 
-      <Box sx={{ mb: 5 }}>
-        <Grid
-          container
-          spacing={{ xs: 10, md: 20 }}
-          justifyContent="center"
-          alignItems="stretch"
-        >
-          {[0, 1].map((item, index) => (
-            <Grid sx={{ display: "flex" }} key={index}>
+      <Box sx={{ mb: 3, p: 3 }}>
+        <Grid container spacing={6} justifyContent="center">
+          {[0, 1, 2].map((item, index) => (
+            <Grid size={{ xs: 12, md: 4 }} key={index}>
               <Box sx={{ width: "100%" }}>
                 <CardsPrices
-                  offer={offer[item]}
-                  price={price[item]}
-                  packageContainer={packageContainer[item]}
-                  subscription={subscription[item]}
+                  offer={plans[item].offer}
+                  price={plans[item].price}
+                  packageContainer={plans[item].features}
+                  subscription={plans[item].subscription}
                 />
               </Box>
             </Grid>
