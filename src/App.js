@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AppProvider } from "@toolpad/core";
-import { Box, createTheme, CircularProgress } from "@mui/material";
+import { Box, createTheme } from "@mui/material";
 import AbbsiumLogo from "./Pictures/abbsium192.png";
 
 // Icons
@@ -12,17 +12,7 @@ import BrushIcon from "@mui/icons-material/Brush";
 import ContactsIcon from "@mui/icons-material/Contacts";
 import HomeRepairServiceIcon from "@mui/icons-material/HomeRepairService";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
-
-// ✅ rutas públicas que no necesitan login
-const PUBLIC_ROUTES = [
-  "/login",
-  "/privacy-policy",
-  "/terms",
-  "/dashboard",
-  "/services",
-  "/prices",
-  "/contacts",
-];
+import { useEffect } from "react";
 
 const NAVIGATION = [
   { kind: "header", title: "Web Sites" },
@@ -54,38 +44,13 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(() => {
+    const stored = localStorage.getItem("session");
+    return stored ? JSON.parse(stored) : null;
+  });
 
-  useEffect(() => {
-    const checkAccess = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const redirect = params.get("redirect");
-
-      if (redirect && location.pathname === "/") {
-        navigate(redirect, { replace: true });
-        return;
-      }
-
-      const sessionStored = localStorage.getItem("session");
-      const isPublic = PUBLIC_ROUTES.includes(location.pathname);
-
-      if (sessionStored) {
-        setSession(JSON.parse(sessionStored));
-        setLoading(false);
-      } else if (isPublic) {
-        setLoading(false);
-      } else {
-        navigate("/login", { replace: true });
-        // ❌ importante: NO desactives loading aquí para evitar flicker
-      }
-    };
-
-    checkAccess();
-  }, [location.pathname, navigate]);
-
-  const authentication = React.useMemo(() => {
-    return {
+  const authentication = useMemo(
+    () => ({
       signIn: () => {
         navigate("/login");
       },
@@ -93,27 +58,14 @@ export default function App() {
         localStorage.removeItem("session");
         setSession(null);
       },
-    };
-  }, [navigate]);
+    }),
+    [navigate]
+  );
 
   const router = {
     navigate: (path) => navigate(path),
     pathname: location.pathname,
   };
-
-  // ⏳ Evita mostrar la app hasta confirmar acceso
-  if (loading) {
-    return (
-      <Box
-        minHeight="100vh"
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
 
   return (
     <AppProvider

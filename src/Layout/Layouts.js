@@ -1,7 +1,7 @@
 import { Stack, Typography } from "@mui/material";
 import Box from "@mui/material/Box";
 import { DashboardLayout } from "@toolpad/core/DashboardLayout";
-import { Outlet } from "react-router-dom";
+import { Outlet, useOutletContext } from "react-router-dom";
 import AbbsiumLogo from "../Pictures/abbsium192.png";
 
 function CustomAppTitle() {

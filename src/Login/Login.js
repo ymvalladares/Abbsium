@@ -44,6 +44,8 @@ const Login = () => {
 
     localStorage.setItem("session", JSON.stringify({ user: userData }));
     navigate("/dashboard");
+    window.location.reload();
+
     // Simulated API response placeholder
     /*
     Pots_Request(`${window.BaseUrlGeneral}Account/${userAction}`, values)
@@ -92,7 +94,7 @@ const Login = () => {
       justifyContent="center"
       alignItems="center"
       textAlign="center"
-      sx={{ minHeight: { xs: "65vh", md: "90vh" } }}
+      sx={{ minHeight: { xs: "80vh", md: "90vh" } }}
       px={2} // padding horizontal para móviles
     >
       <Box
