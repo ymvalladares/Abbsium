@@ -1,8 +1,32 @@
 import { Box, Chip, Container, Divider, Grid, Typography } from "@mui/material";
-import React from "react";
 import InvestmentCard from "../ReusableComp/InvestmentCard";
 import Eureka_Picture from "../Pictures/Eureka.png";
+import PayPal from "../Pictures/Paypal.png";
+import Robinhood from "../Pictures/robinhoo.png";
 import Footer from "../Components/Footer";
+
+const items = [
+  {
+    name: "Eureka",
+    bg: Eureka_Picture,
+    link: "https://join.robinhood.com/yordanm-257ffe",
+  },
+  {
+    name: "PayPal",
+    bg: PayPal,
+    link: "https://join.robinhood.com/yordanm-257ffe",
+  },
+  {
+    name: "PayPal",
+    bg: PayPal,
+    link: "https://join.robinhood.com/yordanm-257ffe",
+  },
+  {
+    name: "Robinhood",
+    bg: Robinhood,
+    link: "https://join.robinhood.com/yordanm-257ffe",
+  },
+];
 
 const Games = () => {
   return (
@@ -63,9 +87,9 @@ const Games = () => {
           </Typography>
         </Box>
         <Grid container spacing={6} justifyContent="center">
-          {[0, 1, 2, 3, 4, 5].map((item, index) => (
+          {items.map((item, index) => (
             <Grid item xs={6} sm={4} md={2} key={index}>
-              <InvestmentCard bg={Eureka_Picture} />
+              <InvestmentCard bg={item.bg} name={item.name} link={item.link} />
             </Grid>
           ))}
         </Grid>

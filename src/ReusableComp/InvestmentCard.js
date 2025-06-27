@@ -7,9 +7,12 @@ import {
   Button,
   Box,
 } from "@mui/material";
+import { useNavigate } from "react-router-dom";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 
-const InvestmentCard = ({ bg }) => {
+const InvestmentCard = ({ bg, name, link }) => {
+  const navigate = useNavigate();
+
   return (
     <Card
       sx={{
@@ -63,10 +66,11 @@ const InvestmentCard = ({ bg }) => {
             mb: 1,
           }}
         >
-          Eureka
+          {name}
         </Typography>
         <Button
           variant="contained"
+          onClick={() => (window.location.href = link)}
           sx={{
             borderRadius: "50%",
             minWidth: "56px",

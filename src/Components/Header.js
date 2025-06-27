@@ -6,6 +6,8 @@ import {
   Button,
   InputBase,
   Divider,
+  TextField,
+  InputAdornment,
 } from "@mui/material";
 import header_photo from "../Pictures/header_pict.png";
 
@@ -46,40 +48,65 @@ const Header = () => {
             success.
           </Typography>
           <Box
-            sx={{ mt: 2 }}
-            display="flex"
-            flexWrap="wrap"
-            justifyContent="center"
+            sx={{
+              mt: 2,
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "center",
+            }}
           >
             <Box
               component="form"
               sx={{
-                p: "2px 4px",
                 display: "flex",
                 alignItems: "center",
-                width: 400,
-                border: "0.5px solid #0399DF",
-                borderRadius: "8px",
+                width: "100%",
               }}
+              // onSubmit={handleSearch}
             >
-              <InputBase
-                sx={{ ml: 1, flex: 1 }}
-                placeholder="Sign Up - It's free"
-                inputProps={{ "aria-label": "search google maps" }}
-              />
-              <Divider sx={{ height: 28, m: 0.5 }} orientation="vertical" />
-              <Button
-                color="primary"
+              <TextField
+                size="small"
+                fullWidth
+                autoComplete="off"
+                label="Sign Up it's free"
+                // onChange={(e) => setSearchQuery(e.target.value)}
                 sx={{
-                  p: "10px",
-                  textTransform: "none",
-                  fontWeight: "bold",
-                  cursor: "pointer",
+                  backgroundColor: "#FAFAFB",
+                  borderRadius: "8px",
+                  "& .MuiFormLabel-root": {
+                    fontSize: "13px",
+                    marginTop: "2px",
+                    color: "#0399DF",
+                    fontWeight: "bold",
+                  },
                 }}
-                aria-label="directions"
-              >
-                Sign Up
-              </Button>
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Button
+                        color="primary"
+                        sx={{
+                          textTransform: "none",
+                          fontWeight: "bold",
+                          cursor: "pointer",
+                        }}
+                        aria-label="sign-up"
+                      >
+                        Sign Up
+                      </Button>
+                    </InputAdornment>
+                  ),
+                  sx: {
+                    ".MuiOutlinedInput-notchedOutline": {
+                      border: "2px solid #0399DF !important",
+                      borderRadius: "8px",
+                    },
+                    "&:hover .MuiOutlinedInput-notchedOutline": {
+                      border: "2px solid #0399DF !important",
+                    },
+                  },
+                }}
+              />
             </Box>
           </Box>
         </Grid>

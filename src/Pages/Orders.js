@@ -186,7 +186,7 @@ const Orders = () => {
               style={{
                 display: "flex",
                 alignItems: "center",
-                width: isMobile ? "100%" : 400,
+                width: isMobile ? "100%" : 300,
               }}
             >
               <TextField
@@ -204,7 +204,6 @@ const Orders = () => {
                   backgroundColor: "#FAFAFB",
                   borderRadius: "8px",
                   width: "100%",
-                  mr: 1,
                 }}
                 InputProps={{
                   endAdornment: (
@@ -233,6 +232,7 @@ const Orders = () => {
                 borderRadius: "8px",
                 marginTop: { xs: "10px", sm: "0" },
                 border: "2px solid #0399DF",
+                fontWeight: "bold",
               }}
               variant="contained"
               startIcon={<AddIcon />}
@@ -248,6 +248,7 @@ const Orders = () => {
                 textTransform: "none",
                 border: "2px solid #C62828",
                 marginTop: { xs: "10px", sm: "0" },
+                fontWeight: "bold",
                 ":hover": {
                   backgroundColor: "white",
                 },

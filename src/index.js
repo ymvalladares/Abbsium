@@ -14,6 +14,8 @@ import Services from "./Pages/Services";
 import PrivacyPolicy from "./Pages/PrivacyPolicy";
 import TermsOfUse from "./Pages/TermsOfUse";
 import Games from "./Pages/Games";
+import Login from "./Login/Login";
+import NotFound from "./Pages/NotFound";
 
 const router = createBrowserRouter([
   {
@@ -23,6 +25,10 @@ const router = createBrowserRouter([
         path: "/",
         Component: Layouts,
         children: [
+          {
+            path: "/login",
+            Component: Login,
+          },
           {
             path: "/",
             Component: Dashboard,
@@ -62,6 +68,10 @@ const router = createBrowserRouter([
           {
             path: "/terms",
             Component: TermsOfUse,
+          },
+          {
+            path: "*",
+            Component: NotFound,
           },
         ],
       },
