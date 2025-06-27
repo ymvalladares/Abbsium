@@ -1,22 +1,25 @@
 {
   "files": {
     "main.css": "/static/css/main.6b9e3fdc.css",
-    "main.js": "/static/js/main.bddff21e.js",
+    "main.js": "/static/js/main.d32a73a1.js",
     "static/js/453.419a5d54.chunk.js": "/static/js/453.419a5d54.chunk.js",
     "static/media/bedroom2.jpeg": "/static/media/bedroom2.50f52b11cde9427ffdce.jpeg",
     "static/media/bedroom1.jpeg": "/static/media/bedroom1.1879ee32670860427209.jpeg",
     "static/media/bedroomSize1.png": "/static/media/bedroomSize1.71f259738c23b0aad8b3.png",
     "static/media/header_pict.png": "/static/media/header_pict.a342c7a638d193ddc306.png",
     "static/media/bedroomSize2.png": "/static/media/bedroomSize2.8442ccfc4f579b03db42.png",
+    "static/media/PawnsApp.png": "/static/media/PawnsApp.f1ea5d0c625b5406fb2b.png",
     "static/media/Eureka.png": "/static/media/Eureka.b26977018776c2ce48e4.png",
     "static/media/robinhoo.png": "/static/media/robinhoo.d02ca349e6e23874ebfd.png",
+    "static/media/HoneyGain.jpg": "/static/media/HoneyGain.9f1e65e6829a973d409d.jpg",
+    "static/media/ySense.avif": "/static/media/ySense.40b53193c8ab6ce35d45.avif",
     "index.html": "/index.html",
     "main.6b9e3fdc.css.map": "/static/css/main.6b9e3fdc.css.map",
-    "main.bddff21e.js.map": "/static/js/main.bddff21e.js.map",
+    "main.d32a73a1.js.map": "/static/js/main.d32a73a1.js.map",
     "453.419a5d54.chunk.js.map": "/static/js/453.419a5d54.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.6b9e3fdc.css",
-    "static/js/main.bddff21e.js"
+    "static/js/main.d32a73a1.js"
   ]
 }
