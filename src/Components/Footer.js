@@ -1,7 +1,8 @@
+// Footer.jsx
 import React from "react";
 import { Box, Grid, Typography, IconButton, Divider } from "@mui/material";
 import AbbsiumLogo from "../Pictures/abbsium192.png";
-import { Link, Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink } from "react-router-dom";
 
 const creditCards = [
   "https://img.icons8.com/color/48/000000/visa.png",
@@ -20,18 +21,16 @@ const socialMedia = [
 const Footer = () => {
   return (
     <Box
+      component="footer"
       sx={{
-        background: "#fff",
         background:
           "linear-gradient(165deg,rgba(255, 255, 255, 1) 56%, rgba(216, 246, 255, 1) 80%)",
-
         pt: 4,
         px: { xs: 3, md: 10 },
         borderTop: "1px solid #E0E0E0",
-        mt: 8,
+        mt: "auto", // clave para empujar al fondo
       }}
     >
-      {/* CTA Section */}
       <Box textAlign="center" mb={8}>
         <Typography color="#709CFF" variant="h5" fontWeight={600} gutterBottom>
           Want to partner with us?
@@ -45,17 +44,14 @@ const Footer = () => {
         </Typography>
       </Box>
 
-      {/* Footer Links */}
       <Grid container spacing={4} justifyContent="space-between">
         <Grid
           item
           xs={12}
           md={3}
-          sx={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
+          display="flex"
+          justifyContent="center"
+          alignItems="center"
         >
           <Box component="img" src={AbbsiumLogo} height="64px" />
         </Grid>
@@ -75,40 +71,26 @@ const Footer = () => {
           <Typography variant="body2">Contact</Typography>
         </Grid>
 
-        <Grid item xs={6} md={2}>
-          <Typography
-            textAlign="center"
-            variant="subtitle2"
-            fontWeight={600}
-            gutterBottom
-          >
+        <Grid item xs={6} md={2} textAlign="center">
+          <Typography variant="subtitle2" fontWeight={600} gutterBottom>
             Follow Me
           </Typography>
-          <Box>
-            {socialMedia.map((item, index) => (
-              <IconButton size="small" key={index}>
-                <Box component="img" sx={{ height: 28 }} src={item} />
-              </IconButton>
-            ))}
-          </Box>
+          {socialMedia.map((item, index) => (
+            <IconButton size="small" key={index}>
+              <Box component="img" sx={{ height: 28 }} src={item} />
+            </IconButton>
+          ))}
         </Grid>
 
-        <Grid item xs={6} md={2}>
-          <Typography
-            textAlign="center"
-            variant="subtitle2"
-            fontWeight={600}
-            gutterBottom
-          >
+        <Grid item xs={6} md={2} textAlign="center">
+          <Typography variant="subtitle2" fontWeight={600} gutterBottom>
             Credit Cards
           </Typography>
-          <Box>
-            {creditCards.map((item, index) => (
-              <IconButton size="small" key={index}>
-                <Box component="img" sx={{ height: 28 }} src={item} />
-              </IconButton>
-            ))}
-          </Box>
+          {creditCards.map((item, index) => (
+            <IconButton size="small" key={index}>
+              <Box component="img" sx={{ height: 28 }} src={item} />
+            </IconButton>
+          ))}
         </Grid>
       </Grid>
 
@@ -116,10 +98,13 @@ const Footer = () => {
 
       <Box
         sx={{
-          display: { xs: "block", sm: "flex" },
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
           justifyContent: "space-between",
-          p: 2,
-          ml: { xs: 10, sm: 0 },
+          alignItems: "center",
+          textAlign: { xs: "center", sm: "left" },
+          px: 2,
+          py: 2,
         }}
       >
         <Typography
@@ -139,13 +124,12 @@ const Footer = () => {
             mt: 0.8,
           }}
         >
-          <Link
-            component={RouterLink}
+          <RouterLink
             to="/privacy-policy"
-            sx={{ color: "black", textDecoration: "none" }}
+            style={{ color: "black", textDecoration: "none" }}
           >
             Privacy Policy
-          </Link>
+          </RouterLink>
           <Typography
             variant="body2"
             component="span"
@@ -154,13 +138,12 @@ const Footer = () => {
           >
             |
           </Typography>
-          <Link
-            component={RouterLink}
+          <RouterLink
             to="/terms"
-            sx={{ color: "black", textDecoration: "none" }}
+            style={{ color: "black", textDecoration: "none" }}
           >
             Terms of Use
-          </Link>
+          </RouterLink>
         </Box>
       </Box>
     </Box>

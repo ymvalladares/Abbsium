@@ -7,12 +7,52 @@ import Bedroom1Back from "../Pictures/bedroomSize1.png";
 import Bedroom2Back from "../Pictures/bedroomSize2.png";
 import Footer from "../Components/Footer";
 
+const cardData = [
+  {
+    id: 0,
+    frontImage: Bedroom1,
+    backImage: Bedroom1Back,
+    price: 199,
+    title: "Bedroom",
+    description:
+      "This plush sofa looks like the perfect place to curl up with a good book.",
+  },
+  {
+    id: 1,
+    frontImage: Bedroom2,
+    backImage: Bedroom2Back,
+    price: 220,
+    title: "Bedroom",
+    description:
+      "This plush sofa looks like the perfect place to curl up with a good book.",
+  },
+  {
+    id: 2,
+    frontImage: Bedroom1,
+    backImage: Bedroom1Back,
+    price: 275,
+    title: "Bedroom",
+    description:
+      "This plush sofa looks like the perfect place to curl up with a good book.",
+  },
+  {
+    id: 3,
+    frontImage: Bedroom1,
+    backImage: Bedroom1Back,
+    price: 165,
+    title: "Bedroom",
+    description:
+      "This plush sofa looks like the perfect place to curl up with a good book.",
+  },
+];
 const CarpentryDesign = () => {
   const [flippedIndex, setFlippedIndex] = useState(null);
   const [unlockedCards, setUnlockedCards] = useState([]);
   const containerRef = useRef(null);
 
   const handleToggle = (index) => {
+    //Request to open Stripe from server
+
     setFlippedIndex((prev) => (prev === index ? null : index));
     if (!unlockedCards.includes(index)) {
       setUnlockedCards((prev) => [...prev, index]);
@@ -31,45 +71,6 @@ const CarpentryDesign = () => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const cardData = [
-    {
-      id: 0,
-      frontImage: Bedroom1,
-      backImage: Bedroom1Back,
-      price: 199,
-      title: "Bedroom",
-      description:
-        "This plush sofa looks like the perfect place to curl up with a good book.",
-    },
-    {
-      id: 1,
-      frontImage: Bedroom2,
-      backImage: Bedroom2Back,
-      price: 220,
-      title: "Bedroom",
-      description:
-        "This plush sofa looks like the perfect place to curl up with a good book.",
-    },
-    {
-      id: 2,
-      frontImage: Bedroom1,
-      backImage: Bedroom1Back,
-      price: 275,
-      title: "Bedroom",
-      description:
-        "This plush sofa looks like the perfect place to curl up with a good book.",
-    },
-    {
-      id: 3,
-      frontImage: Bedroom1,
-      backImage: Bedroom1Back,
-      price: 165,
-      title: "Bedroom",
-      description:
-        "This plush sofa looks like the perfect place to curl up with a good book.",
-    },
-  ];
 
   return (
     <>

@@ -4,8 +4,6 @@ import {
   Button,
   Checkbox,
   IconButton,
-  InputBase,
-  Paper,
   Table,
   TableBody,
   TableCell,
@@ -26,64 +24,64 @@ import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 const orders = [
   {
     name: "Dagmar Garcia",
+    producto: "Web Page",
     website: "innovuspro.com",
-    position: "CEO",
     dob: "29.03.2016",
     status: "Active",
     plan: "Premium",
   },
   {
     name: "Carlos Mendez",
+    producto: "Web Page",
     website: "mendeztech.io",
-    position: "CTO",
     dob: "12.07.2015",
     status: "Active",
     plan: "Advance",
   },
   {
     name: "Lucia Herrera",
-    website: "herreraagency.net",
-    position: "Marketing Manager",
+    producto: "Design",
+    website: "N/A",
     dob: "03.11.2018",
-    status: "Inactive",
-    plan: "Basic",
+    status: "Active",
+    plan: "N/A",
   },
   {
     name: "Jorge Ramírez",
+    producto: "Web Page",
     website: "buildstrong.org",
-    position: "Project Manager",
     dob: "21.06.2017",
     status: "Pending",
     plan: "Basic",
   },
   {
     name: "Sandra López",
-    website: "sandradesign.com",
-    position: "UI/UX Designer",
+    producto: "Design",
+    website: "N/A",
     dob: "15.02.2019",
     status: "Active",
-    plan: "Premium",
+    plan: "N/A",
   },
   {
     name: "Kevin Torres",
+    producto: "Web Page",
     website: "torresdevs.co",
-    position: "Lead Developer",
     dob: "09.09.2020",
     status: "Inactive",
     plan: "Advance",
   },
   {
     name: "Natalia Ruiz",
+    producto: "Web Page",
     website: "ruizmedia.net",
-    position: "Content Creator",
     dob: "28.01.2017",
     status: "Active",
     plan: "Basic",
   },
   {
     name: "Andres Vega",
+    producto: "Web Page",
     website: "vegaconsulting.org",
-    position: "Consultant",
     dob: "04.12.2016",
     status: "Inactive",
     plan: "Basic",
@@ -92,8 +90,8 @@ const orders = [
 
 const tableHeaders = [
   { key: "name", label: "Full name" },
+  { key: "producto", label: "Producto" },
   { key: "website", label: "Website" },
-  { key: "position", label: "Position" },
   { key: "dob", label: "Date" },
   { key: "status", label: "Status", isChip: true },
   { key: "plan", label: "Plan" },
@@ -376,7 +374,7 @@ const Orders = () => {
             </TableBody>
           </Table>
           <TablePagination
-            sx={{ mt: 4 }}
+            sx={{ mt: 4, mb: { xs: 8 } }}
             rowsPerPageOptions={[7, 10]}
             component="div"
             count={rows.length}

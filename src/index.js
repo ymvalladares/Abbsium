@@ -18,68 +18,6 @@ import Login from "./Login/Login";
 import NotFound from "./Pages/NotFound";
 import ProtectedLayout from "./Helpers/ProtectedLayout";
 
-// const router = createBrowserRouter([
-//   {
-//     Component: App,
-//     children: [
-//       {
-//         path: "/",
-//         Component: Layouts,
-//         children: [
-//           {
-//             path: "/login",
-//             Component: Login,
-//           },
-//           {
-//             path: "/",
-//             Component: Dashboard,
-//           },
-//           {
-//             path: "/dashboard",
-//             Component: Dashboard,
-//           },
-//           {
-//             path: "/services",
-//             Component: Services,
-//           },
-//           {
-//             path: "/prices",
-//             Component: Prices,
-//           },
-//           {
-//             path: "/orders",
-//             Component: Orders,
-//           },
-//           {
-//             path: "/carpentry-design",
-//             Component: CarpentryDesign,
-//           },
-//           {
-//             path: "/contacts",
-//             Component: Contacts,
-//           },
-//           {
-//             path: "/investments",
-//             Component: Games,
-//           },
-//           {
-//             path: "/privacy-policy",
-//             Component: PrivacyPolicy,
-//           },
-//           {
-//             path: "/terms",
-//             Component: TermsOfUse,
-//           },
-//           {
-//             path: "*",
-//             Component: NotFound,
-//           },
-//         ],
-//       },
-//     ],
-//   },
-// ]);
-
 const router = createBrowserRouter([
   {
     Component: App,

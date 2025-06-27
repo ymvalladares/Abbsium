@@ -1,8 +1,11 @@
 import { Box, Chip, Container, Divider, Grid, Typography } from "@mui/material";
 import InvestmentCard from "../ReusableComp/InvestmentCard";
 import Eureka_Picture from "../Pictures/Eureka.png";
-import PayPal from "../Pictures/Paypal.png";
+import Pawns from "../Pictures/PawnsApp.png";
+import ySense from "../Pictures/ySense.avif";
+import HoneyGain from "../Pictures/HoneyGain.jpg";
 import Robinhood from "../Pictures/robinhoo.png";
+import Rakuten from "../Pictures/Rakuten.jpeg";
 import Footer from "../Components/Footer";
 
 const items = [
@@ -12,14 +15,24 @@ const items = [
     link: "https://join.robinhood.com/yordanm-257ffe",
   },
   {
-    name: "PayPal",
-    bg: PayPal,
-    link: "https://join.robinhood.com/yordanm-257ffe",
+    name: "Pawns.App",
+    bg: Pawns,
+    link: "https://discoverpawns.eu/15098663",
   },
   {
-    name: "PayPal",
-    bg: PayPal,
-    link: "https://join.robinhood.com/yordanm-257ffe",
+    name: "ySense",
+    bg: ySense,
+    link: "https://www.ysense.com/?rb=215466772",
+  },
+  {
+    name: "Rakuten",
+    bg: Rakuten,
+    link: "https://www.rakuten.com/r/YORDAN477?eeid=28187",
+  },
+  {
+    name: "HoneyGain",
+    bg: HoneyGain,
+    link: "https://r.honeygain.me/YORDAD78D1",
   },
   {
     name: "Robinhood",
@@ -83,10 +96,10 @@ const Games = () => {
               fontSize: "0.75rem",
             }}
           >
-            Games
+            Make money playing
           </Typography>
         </Box>
-        <Grid container spacing={6} justifyContent="center">
+        <Grid mb={10} container spacing={6} justifyContent="center">
           {items.map((item, index) => (
             <Grid item xs={6} sm={4} md={2} key={index}>
               <InvestmentCard bg={item.bg} name={item.name} link={item.link} />

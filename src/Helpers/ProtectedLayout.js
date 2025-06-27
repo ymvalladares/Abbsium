@@ -13,6 +13,7 @@ const PUBLIC_ROUTES = [
   "/prices",
   "/contacts",
 ];
+
 export default function ProtectedLayout() {
   const [loading, setLoading] = useState(true);
   const location = useLocation();

@@ -46,7 +46,13 @@ const plans = [
 
 const Prices = () => {
   return (
-    <>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: "100vh",
+      }}
+    >
       <Box
         mt={{ xs: -3, md: -7 }}
         //mb={2}
@@ -111,7 +117,7 @@ const Prices = () => {
         </Grid>
       </Box>
       <Footer />
-    </>
+    </Box>
   );
 };
 

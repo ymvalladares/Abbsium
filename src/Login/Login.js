@@ -37,7 +37,7 @@ const Login = () => {
 
   const handleSubmit = async (values, actions) => {
     const userData = {
-      name: "Yordan",
+      name: "Yordan Jesus Martinez",
       email: "yordan@abbsium.com",
       image: "https://avatars.githubusercontent.com/u/103406224",
     };

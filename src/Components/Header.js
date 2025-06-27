@@ -53,6 +53,7 @@ const Header = () => {
               display: "flex",
               flexWrap: "wrap",
               justifyContent: "center",
+              width: { xs: "100%", md: "70%" },
             }}
           >
             <Box
