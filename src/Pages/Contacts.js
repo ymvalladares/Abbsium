@@ -81,7 +81,7 @@ const Contacts = () => {
                 elevation={0}
               >
                 <iframe
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3586.7363432831457!2d-80.20410552480931!3d25.976685977217407!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x88d9aebba9c15ba7%3A0x641d970915ecba28!2s3661%20SW%2058th%20Ave%2C%20West%20Park%2C%20FL%2033023!5e0!3m2!1ses-419!2sus!4v1749059478328!5m2!1ses-419!2sus"
+                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3447.084561873834!2d-81.56351632464738!3d30.234664974828327!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x88e5ca6038bedd25%3A0x1b9b7759bc7dddb7!2s7595%20Baymeadows%20Cir%20W%2C%20Jacksonville%2C%20FL%2032256!5e0!3m2!1ses!2sus!4v1751149569629!5m2!1ses!2sus"
                   width="100%"
                   height="100%"
                   style={{ border: "0" }}

@@ -45,7 +45,9 @@ const Dashboard = () => {
   return (
     <>
       <Header />
-      <Box sx={{ textAlign: "center", py: 6, px: 2 }}>
+      <Box
+        sx={{ textAlign: "center", py: 6, px: 2, maxWidth: 1200, mx: "auto" }}
+      >
         <Typography color="#709CFF" variant="h4" fontWeight="bold" mb={1}>
           Why Choose Us
         </Typography>
@@ -57,18 +59,26 @@ const Dashboard = () => {
           results tailored to your business goals.
         </Typography>
 
-        <Grid container spacing={3} justifyContent="center">
+        <Grid mb={4} container spacing={3} justifyContent="center">
           {propertyTypes.map((item, index) => (
-            <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={index}>
+            <Grid
+              size={{ xs: 6, sm: 4, md: 2.4 }}
+              key={index}
+              letterSpacing={2.4}
+            >
               <Card
-                //elevation={2}
                 sx={{
                   py: 4,
+                  px: 2,
                   textAlign: "center",
                   borderRadius: 3,
                   cursor: "pointer",
                   boxShadow: "none",
-                  border: `2px solid ${item.bgcolor} `,
+                  border: `2px solid ${item.bgcolor}`,
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
                 }}
               >
                 <Box
@@ -86,10 +96,10 @@ const Dashboard = () => {
                 >
                   {item.icon}
                 </Box>
-                <Typography variant="subtitle1" fontWeight={600}>
+                <Typography variant="subtitle1" fontWeight={600} mb={1}>
                   {item.title}
                 </Typography>
-                <Typography pl={1} variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary">
                   {item.description}
                 </Typography>
               </Card>

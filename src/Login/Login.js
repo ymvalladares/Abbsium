@@ -4,10 +4,10 @@ import { Schema_Login_Validation } from "../Helpers/SchemaValidation";
 import Input_Fields from "../Helpers/Input_Fields";
 import CustomCheckbox from "../Helpers/CustomCheckbox";
 import { Box, Button, Chip, Divider, Stack, Typography } from "@mui/material";
-import GoogleIcon from "@mui/icons-material/Google";
 import Alerts from "../ReusableComp/Alerts";
 import { Link, useNavigate } from "react-router-dom";
 import "./Login.css";
+import Google_logo from "../Pictures/google-logo.png";
 
 const FORM_FIELDS = [
   {
@@ -102,7 +102,7 @@ const Login = () => {
           display: "flex",
           flexDirection: "column",
           padding: { xs: 3, sm: 4 },
-          boxShadow: "0px 0px 15px rgba(0, 0, 255, 0.3)",
+          boxShadow: "0px 0px 5px 5px #0399DF",
           borderRadius: "12px",
           width: {
             xs: "100%", // 100% del ancho en móviles
@@ -114,7 +114,7 @@ const Login = () => {
         }}
       >
         <Stack alignItems="center" width="100%">
-          <Typography color="secondary.main" variant="h5" fontWeight="bold">
+          <Typography color="#0399DF" variant="h5" fontWeight="bold">
             {userAction === "login" ? "Sign In Abbsium" : "Sign up Abbsium"}
           </Typography>
           <Typography variant="caption" fontSize="16px" textAlign="center">
@@ -129,19 +129,33 @@ const Login = () => {
           sx={{
             color: "grey.700",
             backgroundColor: "white",
-            borderColor: "grey",
+            borderColor: "#A9A9A9",
             mt: 1,
             textTransform: "none",
           }}
         >
-          <GoogleIcon sx={{ color: "red", mr: 2, fontSize: "18px" }} />
+          <Box
+            component="img"
+            src={Google_logo} // ← Cambia esto por la ruta de tu imagen
+            alt="Custom Icon"
+            sx={{ width: 20, height: 20, mr: 2 }}
+          />
           {userAction === "login"
             ? "Sign in with Google"
             : "Sign up with Google"}
         </Button>
 
         <Divider sx={{ my: 3 }}>
-          <Chip label="OR" variant="outlined" sx={{ color: "blue", px: 2 }} />
+          <Chip
+            label="OR"
+            variant="outlined"
+            sx={{
+              color: "#0399DF",
+              px: 2,
+              fontWeight: "bold",
+              border: "1px solid  #0399DF",
+            }}
+          />
         </Divider>
 
         {alert.message && (
@@ -179,8 +193,8 @@ const Login = () => {
                   py: 1,
                   fontWeight: 600,
                   textTransform: "none",
-                  backgroundColor: "#8e05c2 !important",
-                  border: "1px solid #8e05c2",
+                  backgroundColor: "#0399DF !important",
+                  border: "1px solid #0399DF",
                 }}
               >
                 {
@@ -202,9 +216,10 @@ const Login = () => {
             </Typography>
             <Link
               style={{
-                color: "#8e05c2",
+                color: "#0399DF",
                 fontWeight: "bold",
                 cursor: "pointer",
+                fontSize: 14,
               }}
               onClick={() => {
                 setUserAction("forgetPassword");

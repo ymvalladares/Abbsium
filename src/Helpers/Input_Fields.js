@@ -6,7 +6,6 @@ import React from "react";
 
 const Input_Fields = ({ label, ...props }) => {
   const [field, meta] = useField(props);
-  //console.log(props);
   const [showPassword, setShowPassword] = React.useState(true);
 
   const handleClickShowPassword = () => setShowPassword((show) => !show);
@@ -52,22 +51,6 @@ const Input_Fields = ({ label, ...props }) => {
           {meta.error}
         </Typography>
       )}
-      {/* <label>{label}</label>
-      <input
-        {...field}
-        {...props}
-        style={{
-          padding: "8px",
-          marginBottom: "8px",
-          borderRadius: "6px",
-          border: "1px solid var(--border)",
-          background: "var(--background)",
-          color: "var(--text-primary)",
-        }}
-        className={meta.touched && meta.error ? "input-error" : ""}
-        required
-      />
-      {meta.touched && meta.error && <div className="error">{meta.error}</div>} */}
     </>
   );
 };
