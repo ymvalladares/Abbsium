@@ -58,7 +58,7 @@ const router = createBrowserRouter([
 
 window.BaseUrl = "https://localhost:44328/";
 //window.BaseUrlGeneral = "https://192.168.86.25:45455/";
-window.BaseUrlGeneral = "https://abbsium-web.onrender.com/";
+window.BaseUrlGeneral = "https://abbsium.onrender.com/";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
