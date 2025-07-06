@@ -139,7 +139,7 @@ namespace Server.Controllers
 
                 if (user == null)
                 {
-                    user = new IdentityUser
+                    user = new User_data
                     {
                         Email = payload.Email,
                         UserName = payload.Email,
