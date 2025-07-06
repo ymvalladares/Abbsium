@@ -1,0 +1,37 @@
+{
+  "Version": 1,
+  "Hash": "B1+ihUvzb0fRAN80lSQhQwxoPlYmDNLUY0ZDFAgBx00=",
+  "Source": "Server",
+  "BasePath": "_content/Server",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [
+    {
+      "Name": "Server\\wwwroot",
+      "Source": "Server",
+      "ContentRoot": "C:\\Mybook\\React\\Abbsium\\Server\\Server\\wwwroot\\",
+      "BasePath": "_content/Server",
+      "Pattern": "**"
+    }
+  ],
+  "Assets": [
+    {
+      "Identity": "C:\\Mybook\\React\\Abbsium\\Server\\Server\\wwwroot\\Images\\website.jpg",
+      "SourceId": "Server",
+      "SourceType": "Discovered",
+      "ContentRoot": "C:\\Mybook\\React\\Abbsium\\Server\\Server\\wwwroot\\",
+      "BasePath": "_content/Server",
+      "RelativePath": "Images/website.jpg",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot\\Images\\website.jpg"
+    }
+  ]
+}
