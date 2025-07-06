@@ -113,15 +113,19 @@ const Login = () => {
       );
 
       if (!response || !response.data) {
-        throw new Error("Respuesta inválida del servidor");
+        throw new Error("Server invalid response");
       }
 
-      const user = response.data;
+      const userData = {
+        name: response.data.userName,
+        email: response.data.email,
+        image: "https://avatar.iran.liara.run/public/25",
+      };
 
-      localStorage.setItem("session", JSON.stringify({ user }));
-      localStorage.setItem("TOKEN_KEY", JSON.stringify(user.token));
+      localStorage.setItem("session", JSON.stringify({ user: userData }));
+      localStorage.setItem("TOKEN_KEY", JSON.stringify(response.data.token));
 
-      console.log("Login con Google exitoso");
+      navigate("/dashboard");
     } catch (error) {
       console.log(error);
       const msg = error.response?.data.message;
