@@ -12,10 +12,10 @@ import BrushIcon from "@mui/icons-material/Brush";
 import ContactsIcon from "@mui/icons-material/Contacts";
 import HomeRepairServiceIcon from "@mui/icons-material/HomeRepairService";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
-import { useEffect } from "react";
 import { SnackbarProvider, useSnackbar } from "notistack";
 import { setSnackbarRef } from "./Helpers/SnackbarUtils";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+import { useEffect } from "react";
 
 const NAVIGATION = [
   { kind: "header", title: "Web Sites" },
@@ -51,6 +51,24 @@ export default function App() {
     const stored = localStorage.getItem("session");
     return stored ? JSON.parse(stored) : null;
   });
+
+  // ✅ Detecta login local (misma pestaña) o externa (otra pestaña)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const stored = localStorage.getItem("session");
+      setSession(stored ? JSON.parse(stored) : null);
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("session-updated", handleStorageChange); // evento personalizado
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("session-updated", handleStorageChange);
+    };
+  }, []);
+
+  // ...
 
   const authentication = useMemo(
     () => ({

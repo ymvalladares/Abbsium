@@ -12,7 +12,7 @@ const items = [
   {
     name: "Eureka",
     bg: Eureka_Picture,
-    link: "https://join.robinhood.com/yordanm-257ffe",
+    link: "https://eurekasurveys.page.link/CrP4KzQFG6hr8zgc9",
   },
   {
     name: "Pawns.App",

@@ -38,8 +38,15 @@ const Login = () => {
     [userAction]
   );
 
+  const preloadImage = (url) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.src = url;
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+
   const handleSubmit = async (values, actions) => {
-    console.log(values);
     try {
       const response = await Pots_Request(
         `${window.BaseUrlGeneral}Account/${userAction}`,
@@ -54,42 +61,36 @@ const Login = () => {
             image: "https://avatar.iran.liara.run/public/25", // avatar fijo
           };
 
+          await preloadImage(userData.image);
+
           localStorage.setItem("session", JSON.stringify({ user: userData }));
           localStorage.setItem(
             "TOKEN_KEY",
             JSON.stringify(response.data.token)
           );
 
-          navigate("/dashboard");
-          actions.resetForm();
+          // ✅ Notifica a App.js que el session cambió
+          window.dispatchEvent(new Event("session-updated"));
 
-          setTimeout(() => {
-            window.location.reload();
-          }, 500);
+          actions.resetForm();
+          navigate("/dashboard"); // navega normalmente, sin recargar
         } else if (userAction === "register") {
-          // Mostrar alerta de éxito
           setAlert({
             message: "User Created Successfully",
             severity: "success",
           });
-
-          // Limpiar formulario después del registro
           actions.resetForm();
         } else if (userAction === "forgetPassword") {
           setAlert({
-            message: "Password reset link sent to your email.",
+            message: response.data.message,
             severity: "success",
           });
 
           actions.resetForm();
-
-          // No redireccionamos ni recargamos
         }
       }
     } catch (error) {
-      console.log(error);
       const msg = error.response?.data.message;
-
       setAlert({
         message: msg,
         severity: "error",
@@ -125,6 +126,8 @@ const Login = () => {
       localStorage.setItem("session", JSON.stringify({ user: userData }));
       localStorage.setItem("TOKEN_KEY", JSON.stringify(response.data.token));
 
+      // ✅ Notifica a App.js que el session cambió
+      window.dispatchEvent(new Event("session-updated"));
       navigate("/dashboard");
     } catch (error) {
       console.log(error);
