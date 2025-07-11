@@ -1,10 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AppProvider } from "@toolpad/core";
 import { Box, createTheme } from "@mui/material";
 import AbbsiumLogo from "./Pictures/abbsium192.png";
 
-// Icons
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import PaymentsIcon from "@mui/icons-material/Payments";
@@ -12,29 +11,12 @@ import BrushIcon from "@mui/icons-material/Brush";
 import ContactsIcon from "@mui/icons-material/Contacts";
 import HomeRepairServiceIcon from "@mui/icons-material/HomeRepairService";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+
 import { SnackbarProvider, useSnackbar } from "notistack";
 import { setSnackbarRef } from "./Helpers/SnackbarUtils";
 import { GoogleOAuthProvider } from "@react-oauth/google";
-import { useEffect } from "react";
-
-const NAVIGATION = [
-  { kind: "header", title: "Web Sites" },
-  { segment: "dashboard", title: "Dashboard", icon: <DashboardIcon /> },
-  { segment: "services", title: "Services", icon: <HomeRepairServiceIcon /> },
-  { segment: "prices", title: "Prices", icon: <PaymentsIcon /> },
-  { segment: "contacts", title: "Contact", icon: <ContactsIcon /> },
-  { kind: "divider" },
-  { kind: "header", title: "Subscriptions" },
-  { segment: "orders", title: "Orders", icon: <ShoppingCartIcon /> },
-  {
-    segment: "carpentry-design",
-    title: "Carpentry Design",
-    icon: <BrushIcon />,
-  },
-  { kind: "divider" },
-  { kind: "header", title: "Earn Money" },
-  { segment: "investments", title: "Investments", icon: <AttachMoneyIcon /> },
-];
+import { useAuth } from "./Hooks/useAuth";
 
 const demoTheme = createTheme({
   cssVariables: {
@@ -46,13 +28,13 @@ const demoTheme = createTheme({
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
 
   const [session, setSession] = useState(() => {
     const stored = localStorage.getItem("session");
     return stored ? JSON.parse(stored) : null;
   });
 
-  // ✅ Detecta login local (misma pestaña) o externa (otra pestaña)
   useEffect(() => {
     const handleStorageChange = () => {
       const stored = localStorage.getItem("session");
@@ -60,7 +42,7 @@ export default function App() {
     };
 
     window.addEventListener("storage", handleStorageChange);
-    window.addEventListener("session-updated", handleStorageChange); // evento personalizado
+    window.addEventListener("session-updated", handleStorageChange);
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
@@ -68,13 +50,9 @@ export default function App() {
     };
   }, []);
 
-  // ...
-
   const authentication = useMemo(
     () => ({
-      signIn: () => {
-        navigate("/login");
-      },
+      signIn: () => navigate("/login"),
       signOut: () => {
         localStorage.removeItem("session");
         localStorage.removeItem("TOKEN_KEY");
@@ -90,9 +68,50 @@ export default function App() {
     pathname: location.pathname,
   };
 
+  const NAVIGATION = useMemo(() => {
+    const base = [
+      { kind: "header", title: "Web Sites" },
+      { segment: "dashboard", title: "Dashboard", icon: <DashboardIcon /> },
+      {
+        segment: "services",
+        title: "Services",
+        icon: <HomeRepairServiceIcon />,
+      },
+      { segment: "prices", title: "Prices", icon: <PaymentsIcon /> },
+      { segment: "contacts", title: "Contact", icon: <ContactsIcon /> },
+      { kind: "divider" },
+      { kind: "header", title: "Subscriptions" },
+      { segment: "orders", title: "Orders", icon: <ShoppingCartIcon /> },
+      {
+        segment: "carpentry-design",
+        title: "Carpentry Design",
+        icon: <BrushIcon />,
+      },
+      { kind: "divider" },
+      { kind: "header", title: "Earn Money" },
+      {
+        segment: "investments",
+        title: "Investments",
+        icon: <AttachMoneyIcon />,
+      },
+    ];
+
+    if (user?.role === "Admin") {
+      base.push({ kind: "divider" });
+      base.push({
+        segment: "users",
+        title: "Admin Panel",
+        icon: <AdminPanelSettingsIcon />,
+      });
+    }
+
+    return base;
+  }, [user]);
+
   function AppWithSnackbar() {
     const snackbar = useSnackbar();
     setSnackbarRef(snackbar);
+
     return (
       <GoogleOAuthProvider clientId="957373776882-nvru55mvgqctlt1o7viqo0iisrrif4k5.apps.googleusercontent.com">
         <AppProvider

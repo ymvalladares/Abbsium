@@ -1,9 +1,10 @@
 import React from "react";
-import App from "./App";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import App from "./App";
 import reportWebVitals from "./reportWebVitals";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
+
 import Layouts from "./Layout/Layouts";
 import Dashboard from "./Pages/Dashboard";
 import Orders from "./Pages/Orders";
@@ -19,6 +20,9 @@ import NotFound from "./Pages/NotFound";
 import ProtectedLayout from "./Helpers/ProtectedLayout";
 import Success_payment from "./Pages/Success_payment";
 import Failure_payment from "./Pages/Failure_payment";
+import AdminLayout from "./Layout/AdminLayout";
+import Users from "./Pages/Users";
+import { AuthProvider } from "./Hooks/AuthContext";
 
 const router = createBrowserRouter([
   {
@@ -40,13 +44,17 @@ const router = createBrowserRouter([
           { path: "/success-payment", Component: Success_payment },
           { path: "/payment-denied", Component: Failure_payment },
 
-          // Protected Routes go under ProtectedLayout
           {
             Component: ProtectedLayout,
             children: [
               { path: "/orders", Component: Orders },
               { path: "/carpentry-design", Component: CarpentryDesign },
             ],
+          },
+
+          {
+            Component: AdminLayout,
+            children: [{ path: "/users", Component: Users }],
           },
 
           { path: "*", Component: NotFound },
@@ -57,17 +65,16 @@ const router = createBrowserRouter([
 ]);
 
 window.BaseUrl = "https://localhost:44328/";
-//window.BaseUrlGeneral = "https://192.168.86.25:45455/";
+// window.BaseUrlGeneral = "https://192.168.86.25:45455/";
 window.BaseUrlGeneral = "https://abbsium.onrender.com/";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   </React.StrictMode>
 );
 
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
 reportWebVitals();

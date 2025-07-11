@@ -118,16 +118,18 @@ namespace Server.Controllers
                 });
             }
 
-            // Generar token
-            var token =  await _tokenService.CreateToken(user);
+            var token = await _tokenService.CreateToken(user);
+            var roles = await _userManager.GetRolesAsync(user);
 
             return Ok(new UserDTO
             {
-               UserName = user.UserName,
-               Email = user.Email,
-               Token = token,
+                UserName = user.UserName,
+                Email = user.Email,
+                Token = token,
+                Rol = roles.FirstOrDefault() ?? "User" // <- devolvemos el primer rol
             });
         }
+
 
         [HttpPost("google-login")]
         public async Task<ActionResult<UserDTO>> GoogleLogin([FromBody] string idToken)
@@ -157,7 +159,7 @@ namespace Server.Controllers
                         });
                     }
 
-                    await _userManager.AddToRoleAsync(user, Roles.Role_User);
+                    await _userManager.AddToRoleAsync(user, Roles.Role_User); // le damos rol
                 }
                 else
                 {
@@ -173,12 +175,14 @@ namespace Server.Controllers
                 }
 
                 var token = await _tokenService.CreateToken(user);
+                var roles = await _userManager.GetRolesAsync(user);
 
                 return Ok(new UserDTO
                 {
                     Email = user.Email,
                     UserName = user.UserName,
-                    Token = token
+                    Token = token,
+                    Rol = roles.FirstOrDefault() ?? "User"
                 });
             }
             catch (InvalidJwtException)
@@ -198,6 +202,7 @@ namespace Server.Controllers
                 });
             }
         }
+
 
 
         [HttpPost("reset-password")]
@@ -243,7 +248,7 @@ namespace Server.Controllers
             });
         }
 
-        [HttpPost("forgot-password")]
+        [HttpPost("forgetPassword")]
         public async Task<ActionResult<AuthResponseDTO>> ForgotPassword(ForgotPasswordDTO model)
         {
             var user = await _userManager.FindByEmailAsync(model.Email);
@@ -256,10 +261,10 @@ namespace Server.Controllers
                 });
             }
 
-            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-            var encodedToken = WebUtility.UrlEncode(token);
+            //var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            //var encodedToken = WebUtility.UrlEncode(token);
 
-            var resetLink = $"{_config["FrontendUrl"]}/reset-password?email={user.Email}&token={encodedToken}";
+            //var resetLink = $"{_config["FrontendUrl"]}/reset-password?email={user.Email}&token={encodedToken}";
 
             // Aquí llamas a tu servicio de email
             //await _emailService.SendAsync(user.Email, "Password Reset", $"Reset your password: {resetLink}");

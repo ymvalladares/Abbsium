@@ -5,12 +5,12 @@ import Input_Fields from "../Helpers/Input_Fields";
 import CustomCheckbox from "../Helpers/CustomCheckbox";
 import { Box, Button, Chip, Divider, Stack, Typography } from "@mui/material";
 import Alerts from "../ReusableComp/Alerts";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import "./Login.css";
-import Google_logo from "../Pictures/google-logo.png";
 import { Pots_Request } from "../Services/PaymentService";
 import { BeatLoader } from "react-spinners";
 import { GoogleLogin } from "@react-oauth/google";
+import { useAuth } from "../Hooks/useAuth";
 
 const FORM_FIELDS = [
   {
@@ -31,20 +31,13 @@ const FORM_FIELDS = [
 const Login = () => {
   const [userAction, setUserAction] = useState("login");
   const [alert, setAlert] = useState({ message: "", severity: "" });
+  const { login } = useAuth(); // ✅ <-- usamos AuthContext
   const navigate = useNavigate();
 
   const filteredInputs = useMemo(
     () => FORM_FIELDS.filter((field) => field.action.includes(userAction)),
     [userAction]
   );
-
-  const preloadImage = (url) =>
-    new Promise((resolve, reject) => {
-      const img = new Image();
-      img.src = url;
-      img.onload = resolve;
-      img.onerror = reject;
-    });
 
   const handleSubmit = async (values, actions) => {
     try {
@@ -58,22 +51,14 @@ const Login = () => {
           const userData = {
             name: response.data.userName,
             email: response.data.email,
-            image: "https://avatar.iran.liara.run/public/25", // avatar fijo
+            role: response.data.role, // Asegúrate que el backend devuelva esto
+            token: response.data.token,
+            image: "https://avatar.iran.liara.run/public/25",
           };
 
-          await preloadImage(userData.image);
-
-          localStorage.setItem("session", JSON.stringify({ user: userData }));
-          localStorage.setItem(
-            "TOKEN_KEY",
-            JSON.stringify(response.data.token)
-          );
-
-          // ✅ Notifica a App.js que el session cambió
-          window.dispatchEvent(new Event("session-updated"));
-
+          login(userData); // ✅ guarda en contexto + localStorage
           actions.resetForm();
-          navigate("/dashboard"); // navega normalmente, sin recargar
+          navigate("/dashboard");
         } else if (userAction === "register") {
           setAlert({
             message: "User Created Successfully",
@@ -85,16 +70,12 @@ const Login = () => {
             message: response.data.message,
             severity: "success",
           });
-
           actions.resetForm();
         }
       }
     } catch (error) {
-      const msg = error.response?.data.message;
-      setAlert({
-        message: msg,
-        severity: "error",
-      });
+      const msg = error.response?.data.message || "An error occurred";
+      setAlert({ message: msg, severity: "error" });
     } finally {
       actions.setSubmitting(false);
     }
@@ -103,57 +84,29 @@ const Login = () => {
   const handleGoogleLogin = async (credentialResponse) => {
     try {
       const { credential } = credentialResponse;
-
-      if (!credential) {
-        throw new Error("No se recibió el token de Google");
-      }
+      if (!credential) throw new Error("Missing Google credential");
 
       const response = await Pots_Request(
         `${window.BaseUrlGeneral}Account/google-login`,
         credential
       );
 
-      if (!response || !response.data) {
-        throw new Error("Server invalid response");
-      }
+      if (!response || !response.data) throw new Error("Invalid response");
 
       const userData = {
         name: response.data.userName,
         email: response.data.email,
+        role: response.data.role,
+        token: response.data.token,
         image: "https://avatar.iran.liara.run/public/25",
       };
 
-      localStorage.setItem("session", JSON.stringify({ user: userData }));
-      localStorage.setItem("TOKEN_KEY", JSON.stringify(response.data.token));
-
-      // ✅ Notifica a App.js que el session cambió
-      window.dispatchEvent(new Event("session-updated"));
+      login(userData); // ✅ guarda en contexto + localStorage
       navigate("/dashboard");
     } catch (error) {
-      console.log(error);
-      const msg = error.response?.data.message;
-
-      setAlert({
-        message: msg,
-        severity: "error",
-      });
+      const msg = error.response?.data.message || "Google login failed";
+      setAlert({ message: msg, severity: "error" });
     }
-  };
-
-  const renderToggleAuthLink = () => {
-    const isLogin = userAction === "login";
-    return (
-      <Typography
-        variant="caption"
-        onClick={() => {
-          setUserAction(isLogin ? "register" : "login");
-          setAlert({ message: "" });
-        }}
-        sx={{ fontWeight: "bold", cursor: "pointer" }}
-      >
-        {isLogin ? "Don’t have an account?" : "Already have an account?"}
-      </Typography>
-    );
   };
 
   return (
@@ -163,7 +116,7 @@ const Login = () => {
       alignItems="center"
       textAlign="center"
       sx={{ minHeight: { xs: "80vh", md: "90vh" } }}
-      px={2} // padding horizontal para móviles
+      px={2}
     >
       <Box
         sx={{
@@ -173,31 +126,28 @@ const Login = () => {
           boxShadow: "0px 0px 5px 5px #0399DF",
           borderRadius: "12px",
           width: {
-            xs: "100%", // 100% del ancho en móviles
-            sm: "400px", // en tablets
-            md: "420px", // en desktop medianos
-            lg: "450px", // en pantallas grandes
+            xs: "100%",
+            sm: "400px",
+            md: "420px",
+            lg: "450px",
           },
-          backgroundColor: "#fff", // opcional para claridad
+          backgroundColor: "#fff",
         }}
       >
         <Stack alignItems="center" width="100%">
           <Typography color="#0399DF" variant="h5" fontWeight="bold">
             {userAction === "login" ? "Sign In Abbsium" : "Sign up Abbsium"}
           </Typography>
-          <Typography
-            variant="caption"
-            fontSize="16px"
-            textAlign="center"
-            mb={3}
-          >
+          <Typography variant="caption" fontSize="16px" mb={3}>
             Enter your credentials to continue
           </Typography>
         </Stack>
 
         <GoogleLogin
           onSuccess={handleGoogleLogin}
-          onError={() => console.log("Login Failed")}
+          onError={() =>
+            setAlert({ message: "Google login failed", severity: "error" })
+          }
           locale="en"
         />
 
@@ -219,7 +169,6 @@ const Login = () => {
         )}
 
         <Formik
-          //key={userAction}
           initialValues={{ email: "", password: "", username: "" }}
           validationSchema={Schema_Login_Validation}
           onSubmit={handleSubmit}
@@ -255,14 +204,7 @@ const Login = () => {
                 }}
               >
                 {isSubmitting ? (
-                  <BeatLoader
-                    color="white"
-                    //loading={loading}
-                    //cssOverride={override}
-                    size={18}
-                    aria-label="Loading Spinner"
-                    data-testid="loader"
-                  />
+                  <BeatLoader color="white" size={18} />
                 ) : (
                   {
                     login: "Log In",
@@ -298,7 +240,18 @@ const Login = () => {
         )}
 
         <Divider sx={{ my: 3 }} />
-        {renderToggleAuthLink()}
+        <Typography
+          variant="caption"
+          onClick={() => {
+            setUserAction(userAction === "login" ? "register" : "login");
+            setAlert({ message: "" });
+          }}
+          sx={{ fontWeight: "bold", cursor: "pointer" }}
+        >
+          {userAction === "login"
+            ? "Don’t have an account?"
+            : "Already have an account?"}
+        </Typography>
       </Box>
     </Box>
   );
