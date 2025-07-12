@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AppProvider } from "@toolpad/core";
 import { Box, createTheme } from "@mui/material";
 import AbbsiumLogo from "./Pictures/abbsium192.png";
 
+// Icons
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import PaymentsIcon from "@mui/icons-material/Payments";
@@ -12,10 +13,14 @@ import ContactsIcon from "@mui/icons-material/Contacts";
 import HomeRepairServiceIcon from "@mui/icons-material/HomeRepairService";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 
+// Toolpad / UI
 import { SnackbarProvider, useSnackbar } from "notistack";
 import { setSnackbarRef } from "./Helpers/SnackbarUtils";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+
+// Auth
 import { useAuth } from "./Hooks/useAuth";
 
 const demoTheme = createTheme({
@@ -28,48 +33,10 @@ const demoTheme = createTheme({
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
-
-  const [session, setSession] = useState(() => {
-    const stored = localStorage.getItem("session");
-    return stored ? JSON.parse(stored) : null;
-  });
-
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const stored = localStorage.getItem("session");
-      setSession(stored ? JSON.parse(stored) : null);
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener("session-updated", handleStorageChange);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("session-updated", handleStorageChange);
-    };
-  }, []);
-
-  const authentication = useMemo(
-    () => ({
-      signIn: () => navigate("/login"),
-      signOut: () => {
-        localStorage.removeItem("session");
-        localStorage.removeItem("TOKEN_KEY");
-        setSession(null);
-        navigate("/dashboard");
-      },
-    }),
-    [navigate]
-  );
-
-  const router = {
-    navigate: (path) => navigate(path),
-    pathname: location.pathname,
-  };
+  const { user, role, logout } = useAuth();
 
   const NAVIGATION = useMemo(() => {
-    const base = [
+    const baseNav = [
       { kind: "header", title: "Web Sites" },
       { segment: "dashboard", title: "Dashboard", icon: <DashboardIcon /> },
       {
@@ -96,21 +63,42 @@ export default function App() {
       },
     ];
 
-    if (user?.role === "Admin") {
-      base.push({ kind: "divider" });
-      base.push({
+    if (role === "Admin") {
+      baseNav.push({ kind: "divider" });
+      baseNav.push({ kind: "header", title: "Admin" });
+      baseNav.push({
         segment: "users",
-        title: "Admin Panel",
+        title: "Users",
         icon: <AdminPanelSettingsIcon />,
       });
     }
 
-    return base;
-  }, [user]);
+    return baseNav;
+  }, [role]);
+
+  const authentication = useMemo(
+    () => ({
+      signIn: () => {
+        navigate("/login");
+      },
+      signOut: () => {
+        logout();
+        navigate("/dashboard");
+      },
+    }),
+    [logout, navigate]
+  );
+
+  const router = {
+    navigate: (path) => navigate(path),
+    pathname: location.pathname,
+  };
 
   function AppWithSnackbar() {
     const snackbar = useSnackbar();
     setSnackbarRef(snackbar);
+
+    const session = { user };
 
     return (
       <GoogleOAuthProvider clientId="957373776882-nvru55mvgqctlt1o7viqo0iisrrif4k5.apps.googleusercontent.com">

@@ -14,7 +14,7 @@ axiosInstance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("TOKEN_KEY");
     if (token) {
-      config.headers["Authorization"] = `Bearer ${JSON.parse(token)}`;
+      config.headers["Authorization"] = `Bearer ${token}`;
     }
     return config;
   },
@@ -29,6 +29,7 @@ axiosInstance.interceptors.response.use(
     const { response } = error;
 
     if (!response) {
+      console.log(response);
       enqueueSnackbar("Network Error: Server is not running", {
         variant: "error",
       });

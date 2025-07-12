@@ -51,12 +51,10 @@ const Login = () => {
           const userData = {
             name: response.data.userName,
             email: response.data.email,
-            role: response.data.role, // Asegúrate que el backend devuelva esto
-            token: response.data.token,
             image: "https://avatar.iran.liara.run/public/25",
           };
 
-          login(userData); // ✅ guarda en contexto + localStorage
+          login(userData, response.data.token, response.data.rol);
           actions.resetForm();
           navigate("/dashboard");
         } else if (userAction === "register") {
@@ -74,6 +72,7 @@ const Login = () => {
         }
       }
     } catch (error) {
+      console.log(error);
       const msg = error.response?.data.message || "An error occurred";
       setAlert({ message: msg, severity: "error" });
     } finally {
