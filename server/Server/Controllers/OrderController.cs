@@ -47,10 +47,8 @@ namespace Server.Controllers
                 Quantity = 1
             }
         },
-                //SuccessUrl = "https://abbsium.com/#/success-payment?session_id={CHECKOUT_SESSION_ID}",
-                //CancelUrl = "https://abbsium.com/#/payment-denied",
-                SuccessUrl = "http://localhost:3000/#/success-payment?session_id={CHECKOUT_SESSION_ID}",
-                CancelUrl = "http://localhost:3000/#/payment-denied",
+                SuccessUrl = "https://abbsium.com/#/success-payment?session_id={CHECKOUT_SESSION_ID}",
+                CancelUrl = "https://abbsium.com/#/payment-denied",
                 Metadata = new Dictionary<string, string>
         {
             { "userId", userId },

@@ -1,5 +1,11 @@
-import React, { useMemo, useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import React, { useMemo } from "react";
+import {
+  Routes,
+  Route,
+  useNavigate,
+  useLocation,
+  Outlet,
+} from "react-router-dom";
 import { AppProvider } from "@toolpad/core";
 import { Box, createTheme } from "@mui/material";
 import AbbsiumLogo from "./Pictures/abbsium192.png";
@@ -13,12 +19,30 @@ import ContactsIcon from "@mui/icons-material/Contacts";
 import HomeRepairServiceIcon from "@mui/icons-material/HomeRepairService";
 import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
-import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 
 // Toolpad / UI
 import { SnackbarProvider, useSnackbar } from "notistack";
 import { setSnackbarRef } from "./Helpers/SnackbarUtils";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+
+// Pages
+import Dashboard from "./Pages/Dashboard";
+import Orders from "./Pages/Orders";
+import CarpentryDesign from "./Pages/CarpentryDesign";
+import Contacts from "./Pages/Contacts";
+import Prices from "./Pages/Prices";
+import Services from "./Pages/Services";
+import PrivacyPolicy from "./Pages/PrivacyPolicy";
+import TermsOfUse from "./Pages/TermsOfUse";
+import Games from "./Pages/Games";
+import Login from "./Login/Login";
+import NotFound from "./Pages/NotFound";
+import ProtectedLayout from "./Helpers/ProtectedLayout";
+import Success_payment from "./Pages/Success_payment";
+import Failure_payment from "./Pages/Failure_payment";
+import AdminLayout from "./Layout/AdminLayout";
+import Users from "./Pages/Users";
+import Layouts from "./Layout/Layouts";
 
 // Auth
 import { useAuth } from "./Hooks/useAuth";
@@ -30,10 +54,13 @@ const demoTheme = createTheme({
   colorSchemes: { light: true, dark: false },
 });
 
-export default function App() {
+function AppWithSnackbar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, role, logout } = useAuth();
+
+  const snackbar = useSnackbar();
+  setSnackbarRef(snackbar);
 
   const NAVIGATION = useMemo(() => {
     const baseNav = [
@@ -94,38 +121,60 @@ export default function App() {
     pathname: location.pathname,
   };
 
-  function AppWithSnackbar() {
-    const snackbar = useSnackbar();
-    setSnackbarRef(snackbar);
+  const session = { user };
 
-    const session = { user };
+  return (
+    <GoogleOAuthProvider clientId="957373776882-nvru55mvgqctlt1o7viqo0iisrrif4k5.apps.googleusercontent.com">
+      <AppProvider
+        session={session}
+        navigation={NAVIGATION}
+        authentication={authentication}
+        router={router}
+        theme={demoTheme}
+        branding={{
+          logo: (
+            <Box
+              component="img"
+              src={AbbsiumLogo}
+              alt="Abbsium Logo"
+              height={25}
+            />
+          ),
+          title: "Abbsium",
+        }}
+      >
+        <Routes>
+          <Route path="/" element={<Layouts />}>
+            <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="services" element={<Services />} />
+            <Route path="prices" element={<Prices />} />
+            <Route path="contacts" element={<Contacts />} />
+            <Route path="investments" element={<Games />} />
+            <Route path="privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="terms" element={<TermsOfUse />} />
+            <Route path="login" element={<Login />} />
 
-    return (
-      <GoogleOAuthProvider clientId="957373776882-nvru55mvgqctlt1o7viqo0iisrrif4k5.apps.googleusercontent.com">
-        <AppProvider
-          session={session}
-          navigation={NAVIGATION}
-          authentication={authentication}
-          router={router}
-          theme={demoTheme}
-          branding={{
-            logo: (
-              <Box
-                component="img"
-                src={AbbsiumLogo}
-                alt="Abbsium Logo"
-                height={25}
-              />
-            ),
-            title: "Abbsium",
-          }}
-        >
-          <Outlet />
-        </AppProvider>
-      </GoogleOAuthProvider>
-    );
-  }
+            <Route element={<ProtectedLayout />}>
+              <Route path="orders" element={<Orders />} />
+              <Route path="carpentry-design" element={<CarpentryDesign />} />
+              <Route path="success-payment" element={<Success_payment />} />
+              <Route path="payment-denied" element={<Failure_payment />} />
+            </Route>
 
+            <Route element={<AdminLayout />}>
+              <Route path="users" element={<Users />} />
+            </Route>
+
+            <Route path="*" element={<NotFound />} />
+          </Route>
+        </Routes>
+      </AppProvider>
+    </GoogleOAuthProvider>
+  );
+}
+
+export default function App() {
   return (
     <SnackbarProvider
       maxSnack={3}
