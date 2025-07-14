@@ -95,12 +95,10 @@ const Login = () => {
       const userData = {
         name: response.data.userName,
         email: response.data.email,
-        role: response.data.role,
-        token: response.data.token,
         image: "https://avatar.iran.liara.run/public/25",
       };
 
-      login(userData); // ✅ guarda en contexto + localStorage
+      login(userData, response.data.token, response.data.rol);
       navigate("/dashboard");
     } catch (error) {
       const msg = error.response?.data.message || "Google login failed";
@@ -182,7 +180,6 @@ const Login = () => {
                   type={type}
                 />
               ))}
-
               {userAction === "login" && (
                 <CustomCheckbox name="remember_me" type="checkbox" />
               )}
@@ -200,16 +197,26 @@ const Login = () => {
                   textTransform: "none",
                   backgroundColor: "#0399DF !important",
                   border: "1px solid #0399DF",
+                  height: 40,
                 }}
               >
                 {isSubmitting ? (
-                  <BeatLoader color="white" size={18} />
+                  <Box
+                    display="flex"
+                    justifyContent="center"
+                    alignItems="center"
+                    width="100%"
+                    height="100%"
+                    sx={{ transform: "scale(0.7)" }} // Escala visual sin deformar bolitas
+                  >
+                    <BeatLoader color="white" size={16} />
+                  </Box>
                 ) : (
                   {
                     login: "Log In",
                     register: "Create",
                     forgetPassword: "Send Email",
-                  }[userAction]
+                  }[userAction] || "Submit"
                 )}
               </Button>
             </Form>

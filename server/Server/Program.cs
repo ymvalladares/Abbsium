@@ -3,10 +3,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Server.Data;
+using Server.Helpers;
 using Server.Middleware;
 using Server.Repositories;
 using Server.Repositories.IRepositories;
-using Server.Services;
 using Stripe;
 using System.Text;
 
@@ -38,6 +38,8 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);  //clase automapear
+
 
 
 var key = Encoding.ASCII.GetBytes(builder.Configuration["JwtSettings:Key"]);

@@ -173,12 +173,16 @@ const CardsPrices = (props) => {
           }}
         >
           {loading ? (
-            <BeatLoader
-              color="#0399DF"
-              size={18}
-              aria-label="Loading Spinner"
-              data-testid="loader"
-            />
+            <Box
+              display="flex"
+              justifyContent="center"
+              alignItems="center"
+              width="100%"
+              height="100%"
+              sx={{ transform: "scale(0.7)" }} // Escala visual sin deformar bolitas
+            >
+              <BeatLoader color="#0399DF" size={16} />
+            </Box>
           ) : (
             "Choose Plan"
           )}

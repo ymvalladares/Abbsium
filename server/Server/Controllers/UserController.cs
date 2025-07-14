@@ -1,6 +1,8 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Server.Entitys;
+using Server.ModelDTO;
 using Server.Repositories.IRepositories;
 
 namespace Server.Controllers
@@ -9,34 +11,44 @@ namespace Server.Controllers
     public class UserController : Base_Control_Api
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IMapper _mapper;
 
-        public UserController(IUnitOfWork unitOfWork)
+        public UserController(IUnitOfWork unitOfWork, IMapper mapper )
         {
             _unitOfWork = unitOfWork;
+            _mapper = mapper;
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<User_data>>> getAllUser()
+        public async Task<ActionResult<IEnumerable<UserModelDto>>> getAllUser()
         {
-            var query = _unitOfWork.UserRepository.GetAll();
-            if (query == null) return BadRequest("Users not found");
-            return Ok(query);
+            var query =  _unitOfWork.UserRepository.GetAll();
+            if (query == null || !query.Any()) return BadRequest("Users not found");
+
+            var mappedUsers = _mapper.Map<IEnumerable<UserModelDto>>(query);
+            return Ok(mappedUsers);
         }
 
 
 
         [HttpGet("ById/{id}")]
-        public async Task<ActionResult<User_data>> getUserById(string id)
+        public async Task<ActionResult<UserModelDto>> getUserById(string id)
         {
-            var query = _unitOfWork.UserRepository.GetFirstOrDefault(x => x.Id == id);
-            return Ok(query);
+            var user = _unitOfWork.UserRepository.GetFirstOrDefault(x => x.Id == id);
+            if (user == null) return NotFound("User not found");
+
+            var dto = _mapper.Map<UserModelDto>(user);
+            return Ok(dto);
         }
 
         [HttpGet("ByUserName/{userName}")]
-        public async Task<ActionResult<User_data>> getAllUser(string userName)
+        public async Task<ActionResult<UserModelDto>> getUserByUserName(string userName)
         {
-            var query = _unitOfWork.UserRepository.GetFirstOrDefault(x => x.UserName == userName);
-            return Ok(query);
+            var user = _unitOfWork.UserRepository.GetFirstOrDefault(x => x.UserName == userName);
+            if (user == null) return NotFound("User not found");
+
+            var dto = _mapper.Map<UserModelDto>(user);
+            return Ok(dto);
         }
     }
 }
