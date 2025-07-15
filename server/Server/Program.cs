@@ -1,3 +1,5 @@
+using AutoMapper;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +19,8 @@ var serverVersion = new MySqlServerVersion(new Version(8, 0, 29));
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ITokenService, Server.Services.TokenService>();
 
-builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);  //clase automapear
+builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);
+
 
 
 // Add services to the container.

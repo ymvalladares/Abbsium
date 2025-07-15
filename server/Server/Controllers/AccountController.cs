@@ -88,15 +88,7 @@ namespace Server.Controllers
         [HttpPost("login")]
         public async Task<ActionResult<UserDTO>> Login(LoginDTO model)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(new AuthResponseDTO
-                {
-                    Success = false,
-                    Message = "Invalid login data."
-                });
-            }
-
+         
             var user = await _userManager.FindByEmailAsync(model.Email);
 
             if (user == null)
