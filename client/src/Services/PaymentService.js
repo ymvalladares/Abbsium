@@ -16,6 +16,7 @@ export const createPayment = async (amount, serviceType) => {
 
 // 👉 Enviar datos genéricos (registro, login, etc.)
 export const Pots_Request = async (url, newRecord) => {
+  console.log(newRecord);
   return axiosInstance.post(url, newRecord);
 };
 export const Get_Request = async (url) => axiosInstance.get(url);

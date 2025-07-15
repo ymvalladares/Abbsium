@@ -17,17 +17,14 @@ var serverVersion = new MySqlServerVersion(new Version(8, 0, 29));
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ITokenService, Server.Services.TokenService>();
 
+builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);  //clase automapear
+
+
 // Add services to the container.
 builder.Services.AddDbContext<DbContext_app>(
             dbContextOptions => dbContextOptions
                 .UseMySql(builder.Configuration.GetConnectionString("DefaultConnection"), serverVersion)
         );
-
-//builder.Services.AddDbContext<DbContext_app>(options =>
-//    options.UseMySql(
-//        builder.Configuration.GetConnectionString("DefaultConnection"),
-//        ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection"))
-//    ));
 
 //this file is generated for the file identity; you have that modificate
 builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DbContext_app>().AddDefaultTokenProviders(); ;
@@ -38,7 +35,7 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);  //clase automapear
+
 
 
 

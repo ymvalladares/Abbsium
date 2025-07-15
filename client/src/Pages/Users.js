@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Box,
   Button,
@@ -20,6 +20,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import Footer from "../Components/Footer";
 import AutoAwesomeMosaicIcon from "@mui/icons-material/AutoAwesomeMosaic";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
+import { Get_Request } from "../Services/PaymentService";
 
 const users = [
   {
@@ -82,7 +83,7 @@ const tableHeaders = [
 ];
 
 const Users = () => {
-  const [rows, setRows] = useState(users);
+  const [rows, setRows] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(7);
@@ -93,6 +94,20 @@ const Users = () => {
   const allRowIds = rows.map((row) => row.id);
   const isAllSelected = selectedRows.length === allRowIds.length;
   const isSomeSelected = selectedRows.length > 0 && !isAllSelected;
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await Get_Request(`${window.BaseUrlGeneral}User`); // Ajusta la ruta si es diferente
+        console.log(response.data);
+        setRows(response.data);
+      } catch (error) {
+        console.error("Error al obtener usuarios:", error);
+      }
+    };
+
+    fetchUsers();
+  }, []);
 
   const toggleSelectAll = () => {
     setSelectedRows(isAllSelected ? [] : allRowIds);
