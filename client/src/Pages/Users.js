@@ -15,12 +15,13 @@ import {
   TextField,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
 import Footer from "../Components/Footer";
 import AutoAwesomeMosaicIcon from "@mui/icons-material/AutoAwesomeMosaic";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import { Get_Request } from "../Services/PaymentService";
+import CircularProgress from "@mui/material/CircularProgress";
+import { BeatLoader } from "react-spinners";
 
 const users = [
   {
@@ -84,6 +85,7 @@ const tableHeaders = [
 
 const Users = () => {
   const [rows, setRows] = useState([]);
+  const [originalRows, setOriginalRows] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(7);
@@ -95,14 +97,19 @@ const Users = () => {
   const isAllSelected = selectedRows.length === allRowIds.length;
   const isSomeSelected = selectedRows.length > 0 && !isAllSelected;
 
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     const fetchUsers = async () => {
+      setLoading(true);
       try {
-        const response = await Get_Request(`${window.BaseUrlGeneral}User`); // Ajusta la ruta si es diferente
-        console.log(response.data);
+        const response = await Get_Request(`${window.BaseUrlGeneral}User`);
         setRows(response.data);
+        setOriginalRows(response.data);
       } catch (error) {
         console.error("Error al obtener usuarios:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -121,7 +128,7 @@ const Users = () => {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    const filtered = users.filter((row) =>
+    const filtered = originalRows.filter((row) =>
       row.username.toLowerCase().includes(searchQuery.toLowerCase())
     );
     setRows(filtered);
@@ -244,59 +251,56 @@ const Users = () => {
           </Box>
         </Box>
 
-        <TableContainer>
-          <Table sx={{ borderCollapse: "separate", buserspacing: "0 6px" }}>
-            <TableHead>
-              <TableRow>
-                <TableCell
-                  padding="checkbox"
-                  sx={{ border: "none", fontWeight: 600 }}
-                >
-                  <Checkbox
-                    checked={isAllSelected}
-                    indeterminate={isSomeSelected}
-                    onChange={toggleSelectAll}
-                  />
-                </TableCell>
-                {tableHeaders.map((col) => (
+        {loading ? (
+          <Box
+            display="flex"
+            justifyContent="center"
+            alignItems="center"
+            width="100%"
+            height="100%"
+            mb={5}
+            mt={5}
+          >
+            <BeatLoader color="#0399DF" size={20} />
+          </Box>
+        ) : (
+          <TableContainer>
+            <Table sx={{ borderCollapse: "separate", buserspacing: "0 6px" }}>
+              <TableHead>
+                <TableRow>
                   <TableCell
-                    key={col.key}
+                    padding="checkbox"
                     sx={{ border: "none", fontWeight: 600 }}
                   >
-                    {col.label}
+                    <Checkbox
+                      checked={isAllSelected}
+                      indeterminate={isSomeSelected}
+                      onChange={toggleSelectAll}
+                    />
                   </TableCell>
-                ))}
-              </TableRow>
-            </TableHead>
+                  {tableHeaders.map((col) => (
+                    <TableCell
+                      key={col.key}
+                      sx={{ border: "none", fontWeight: 600 }}
+                    >
+                      {col.label}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
 
-            <TableBody>
-              {rows
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((row, index) => {
-                  const isSelected = selectedRows.includes(row.id);
-                  return (
-                    <TableRow key={index} sx={{ transition: "all 0.3s ease" }}>
-                      <TableCell
-                        padding="checkbox"
-                        sx={{
-                          borderBottom: "none",
-                          paddingTop: "5px",
-                          paddingBottom: "5px",
-                          fontSize: "0.875rem",
-                          fontWeight: 400,
-                          backgroundColor: isSelected ? "#E3F0FE" : "inherit",
-                          borderRadius: isSelected ? "8px 0 0 8px" : 0,
-                        }}
+              <TableBody>
+                {rows
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((row, index) => {
+                    const isSelected = selectedRows.includes(row.id);
+                    return (
+                      <TableRow
+                        key={index}
+                        sx={{ transition: "all 0.3s ease" }}
                       >
-                        <Checkbox
-                          checked={!!isSelected}
-                          onChange={() => toggleRowSelection(row.id)}
-                        />
-                      </TableCell>
-
-                      {tableHeaders.map((col, colIndex) => (
                         <TableCell
-                          key={col.key}
+                          padding="checkbox"
                           sx={{
                             borderBottom: "none",
                             paddingTop: "5px",
@@ -304,71 +308,93 @@ const Users = () => {
                             fontSize: "0.875rem",
                             fontWeight: 400,
                             backgroundColor: isSelected ? "#E3F0FE" : "inherit",
-                            borderRadius:
-                              isSelected &&
-                              ((colIndex === 0 &&
-                                !colIndex === tableHeaders.length - 1) ||
-                                colIndex === tableHeaders.length - 1)
-                                ? colIndex === 0
-                                  ? "8px 0 0 8px"
-                                  : "0 8px 8px 0"
-                                : 0,
+                            borderRadius: isSelected ? "8px 0 0 8px" : 0,
                           }}
                         >
-                          {col.isChip ? (
-                            <Box
-                              sx={{
-                                display: "inline-block",
-                                px: 1.5,
-                                py: 0.5,
-                                border:
-                                  row[col.key] === "Active"
-                                    ? "1px solid #28a745"
-                                    : row[col.key] === "Pending"
-                                      ? "1px solid #ffc107"
-                                      : "1px solid #C62828",
-                                borderRadius: "16px",
-                                color: "white",
-                                fontSize: "0.75rem",
-                                fontWeight: "bold",
-                                backgroundColor:
-                                  row[col.key] === "Active"
-                                    ? "#28a745"
-                                    : row[col.key] === "Pending"
-                                      ? "#ffc107"
-                                      : "#C62828",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {row[col.key]}
-                            </Box>
-                          ) : col.key === "emailConfirmed" ? (
-                            row[col.key] ? (
-                              "Yes"
-                            ) : (
-                              "No"
-                            )
-                          ) : (
-                            row[col.key]
-                          )}
+                          <Checkbox
+                            checked={!!isSelected}
+                            onChange={() => toggleRowSelection(row.id)}
+                          />
                         </TableCell>
-                      ))}
-                    </TableRow>
-                  );
-                })}
-            </TableBody>
-          </Table>
-          <TablePagination
-            sx={{ mt: 4, mb: { xs: 8 } }}
-            rowsPerPageOptions={[7, 10]}
-            component="div"
-            count={rows.length}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-          />
-        </TableContainer>
+
+                        {tableHeaders.map((col, colIndex) => (
+                          <TableCell
+                            key={col.key}
+                            sx={{
+                              borderBottom: "none",
+                              paddingTop: "5px",
+                              paddingBottom: "5px",
+                              fontSize: "0.875rem",
+                              fontWeight: 400,
+                              backgroundColor: isSelected
+                                ? "#E3F0FE"
+                                : "inherit",
+                              borderRadius:
+                                isSelected &&
+                                ((colIndex === 0 &&
+                                  !colIndex === tableHeaders.length - 1) ||
+                                  colIndex === tableHeaders.length - 1)
+                                  ? colIndex === 0
+                                    ? "8px 0 0 8px"
+                                    : "0 8px 8px 0"
+                                  : 0,
+                            }}
+                          >
+                            {col.isChip ? (
+                              <Box
+                                sx={{
+                                  display: "inline-block",
+                                  px: 1.5,
+                                  py: 0.5,
+                                  border:
+                                    row[col.key] === "Active"
+                                      ? "1px solid #28a745"
+                                      : row[col.key] === "Pending"
+                                        ? "1px solid #ffc107"
+                                        : "1px solid #C62828",
+                                  borderRadius: "16px",
+                                  color: "white",
+                                  fontSize: "0.75rem",
+                                  fontWeight: "bold",
+                                  backgroundColor:
+                                    row[col.key] === "Active"
+                                      ? "#28a745"
+                                      : row[col.key] === "Pending"
+                                        ? "#ffc107"
+                                        : "#C62828",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {row[col.key]}
+                              </Box>
+                            ) : col.key === "emailConfirmed" ? (
+                              row[col.key] ? (
+                                "Yes"
+                              ) : (
+                                "No"
+                              )
+                            ) : (
+                              row[col.key]
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    );
+                  })}
+              </TableBody>
+            </Table>
+            <TablePagination
+              sx={{ mt: 4, mb: { xs: 8 } }}
+              rowsPerPageOptions={[7, 10]}
+              component="div"
+              count={rows.length}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+            />
+          </TableContainer>
+        )}
       </Box>
       <Footer />
     </>

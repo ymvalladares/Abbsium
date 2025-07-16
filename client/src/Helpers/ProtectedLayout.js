@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate, Outlet } from "react-router-dom";
+import { useLocation, Navigate, Outlet } from "react-router-dom";
 import { Box, CircularProgress } from "@mui/material";
+import { useAuth } from "../Hooks/useAuth"; // ajusta el path si es diferente
 
 // ✅ rutas públicas que no necesitan login
 const PUBLIC_ROUTES = [
@@ -15,22 +15,11 @@ const PUBLIC_ROUTES = [
 ];
 
 export default function ProtectedLayout() {
-  const [loading, setLoading] = useState(true);
+  const { user, isAuthLoaded } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
 
-  useEffect(() => {
-    const session = localStorage.getItem("TOKEN_KEY");
-    const isPublic = PUBLIC_ROUTES.includes(location.pathname);
-
-    if (session || isPublic) {
-      setLoading(false);
-    } else {
-      navigate("/login", { replace: true });
-    }
-  }, [location.pathname, navigate]);
-
-  if (loading) {
+  // Esperar a que se cargue el auth context
+  if (!isAuthLoaded) {
     return (
       <Box
         minHeight="100vh"
@@ -43,5 +32,16 @@ export default function ProtectedLayout() {
     );
   }
 
+  // Si es una ruta pública, permitir siempre
+  if (PUBLIC_ROUTES.includes(location.pathname)) {
+    return <Outlet />;
+  }
+
+  // Si no hay sesión, redirigir al login
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Si está autenticado, permitir acceso
   return <Outlet />;
 }

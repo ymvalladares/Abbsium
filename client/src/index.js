@@ -32,11 +32,11 @@ window.BaseUrlGeneral = "https://abbsium.onrender.com/";
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
-    <AuthProvider>
-      <HashRouter>
-        <App></App>
-      </HashRouter>
-    </AuthProvider>
+    <HashRouter>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </HashRouter>
   </React.StrictMode>
 );
 
