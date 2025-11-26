@@ -6,6 +6,8 @@ using Server.Entitys;
 using Server.ModelDTO;
 using Server.Repositories.IRepositories;
 using System.Net;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace Server.Controllers
 {
@@ -18,7 +20,13 @@ namespace Server.Controllers
         private readonly ITokenService _tokenService;
         private readonly IConfiguration _config;
 
-        public AccountController(DbContext_app db, UserManager<IdentityUser> userManager, SignInManager<IdentityUser> signInManager, RoleManager<IdentityRole> roleManager, ITokenService tokenService, IConfiguration config)
+        public AccountController(
+            DbContext_app db,
+            UserManager<IdentityUser> userManager,
+            SignInManager<IdentityUser> signInManager,
+            RoleManager<IdentityRole> roleManager,
+            ITokenService tokenService,
+            IConfiguration config)
         {
             _db = db;
             _userManager = userManager;
@@ -28,19 +36,11 @@ namespace Server.Controllers
             _config = config;
         }
 
-        [HttpGet("test-users")]
-        public IActionResult TestUsers()
-        {
-            var users = _db.Users.ToList();
-            return Ok(new { count = users.Count, data = users });
-        }
-
-
         [HttpPost("register")]
-        public async Task<ActionResult<UserDTO>> Register(RegisterDTO register_user)
+        public async Task<ActionResult<AuthResponseDTO>> Register(RegisterDTO model)
         {
-            // Verifica si el usuario ya existe
-            if (await _userManager.FindByEmailAsync(register_user.Email) is not null)
+            // 1) Verificar email duplicado
+            if (await _userManager.FindByEmailAsync(model.Email) is not null)
             {
                 return BadRequest(new AuthResponseDTO
                 {
@@ -49,23 +49,21 @@ namespace Server.Controllers
                 });
             }
 
-            // Asegura que el rol 'User' exista
-            if (!await _roleManager.RoleExistsAsync("User"))
-            {
-                await _roleManager.CreateAsync(new IdentityRole("User"));
-            }
+            // 2) Crear rol por defecto si no existe
+            await EnsureDefaultRolesAsync();
 
-            // Crear el nuevo usuario
-            var user = new User_data
+            // 3) Crear el usuario
+            var newUser = new User_data
             {
-                UserName = register_user.UserName,
-                Email = register_user.Email
+                UserName = model.UserName,
+                Email = model.Email
             };
 
-            var result = await _userManager.CreateAsync(user, register_user.Password);
+            var result = await _userManager.CreateAsync(newUser, model.Password);
+
             if (!result.Succeeded)
             {
-                var errors = string.Join("; ", result.Errors.Select(e => e.Description));
+                string errors = string.Join("; ", result.Errors.Select(e => e.Description));
                 return BadRequest(new AuthResponseDTO
                 {
                     Success = false,
@@ -73,58 +71,74 @@ namespace Server.Controllers
                 });
             }
 
-            // Asignar rol por defecto
-            await _userManager.AddToRoleAsync(user, Roles.Role_User);
+            // 4) Asignar rol por defecto
+            await _userManager.AddToRoleAsync(newUser, Roles.Role_Admin);
 
-            // Preparar respuesta
+            // 5) Respuesta
             return Ok(new AuthResponseDTO
             {
                 Success = true,
-                Message = "User registered successfully.",
+                Message = "User registered successfully."
             });
         }
 
 
-        [HttpPost("login")]
-        public async Task<ActionResult<UserDTO>> Login(LoginDTO model)
+        /// <summary>
+        /// Verifica y crea el rol de usuario por defecto si no existe.
+        /// </summary>
+        private async Task EnsureDefaultRolesAsync()
         {
-         
+            if (!await _roleManager.RoleExistsAsync(Roles.Role_User))
+            {
+                await _roleManager.CreateAsync(new IdentityRole(Roles.Role_User));
+            }
+        }
+
+
+        [HttpPost("login")]
+        public async Task<ActionResult<TokenResponseDTO>> Login(LoginDTO model)
+        {
             var user = await _userManager.FindByEmailAsync(model.Email);
 
             if (user == null)
             {
-                return Unauthorized(new AuthResponseDTO
+                return BadRequest(new AuthResponseDTO
                 {
                     Success = false,
-                    Message = "Invalid email !!!."
+                    Message = "Invalid email."
                 });
             }
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, model.Password, false);
             if (!result.Succeeded)
             {
-                return Unauthorized(new AuthResponseDTO
+                return BadRequest(new AuthResponseDTO
                 {
                     Success = false,
-                    Message = "Invalid password !!!."
+                    Message = "Invalid password."
                 });
             }
 
+            // Generar access token (JWT)
             var token = await _tokenService.CreateToken(user);
+
+            // Generar y almacenar refresh token en DB
+            var refreshEntity = await _tokenService.GenerateAndSaveRefreshTokenAsync(user);
+
             var roles = await _userManager.GetRolesAsync(user);
 
-            return Ok(new UserDTO
+            return Ok(new TokenResponseDTO
             {
-                UserName = user.UserName,
-                Email = user.Email,
                 Token = token,
-                Rol = roles.FirstOrDefault() ?? "User" // <- devolvemos el primer rol
+                RefreshToken = refreshEntity.Token,
+                Email = user.Email,
+                UserName = user.UserName,
+                Rol = roles.FirstOrDefault() ?? "User"
             });
         }
 
-
         [HttpPost("google-login")]
-        public async Task<ActionResult<UserDTO>> GoogleLogin([FromBody] string idToken)
+        public async Task<ActionResult<TokenResponseDTO>> GoogleLogin([FromBody] string idToken)
         {
             try
             {
@@ -151,14 +165,15 @@ namespace Server.Controllers
                         });
                     }
 
-                    await _userManager.AddToRoleAsync(user, Roles.Role_User); // le damos rol
+                    // Asignar rol por defecto
+                    await _userManager.AddToRoleAsync(user, Roles.Role_User);
                 }
                 else
                 {
                     var hasPassword = await _userManager.HasPasswordAsync(user);
                     if (hasPassword)
                     {
-                        return Unauthorized(new AuthResponseDTO
+                        return BadRequest(new AuthResponseDTO
                         {
                             Success = false,
                             Message = "Use the traditional login for this email"
@@ -166,20 +181,23 @@ namespace Server.Controllers
                     }
                 }
 
+                // Generar tokens (access + refresh)
                 var token = await _tokenService.CreateToken(user);
+                var refreshEntity = await _tokenService.GenerateAndSaveRefreshTokenAsync(user);
                 var roles = await _userManager.GetRolesAsync(user);
 
-                return Ok(new UserDTO
+                return Ok(new TokenResponseDTO
                 {
+                    Token = token,
+                    RefreshToken = refreshEntity.Token,
                     Email = user.Email,
                     UserName = user.UserName,
-                    Token = token,
                     Rol = roles.FirstOrDefault() ?? "User"
                 });
             }
             catch (InvalidJwtException)
             {
-                return Unauthorized(new AuthResponseDTO
+                return BadRequest(new AuthResponseDTO
                 {
                     Success = false,
                     Message = "Token de Google inválido o expirado."
@@ -195,7 +213,70 @@ namespace Server.Controllers
             }
         }
 
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> Refresh(RefreshRequestDto request)
+        {
+            if (string.IsNullOrWhiteSpace(request.AccessToken) || string.IsNullOrWhiteSpace(request.RefreshToken))
+                return BadRequest(new { success = false, message = "Invalid request." });
 
+            var principal = _tokenService.GetPrincipalFromExpiredToken(request.AccessToken);
+            if (principal == null)
+                return BadRequest(new { success = false, message = "Invalid access token." });
+
+            var userId =
+             principal.FindFirstValue(JwtRegisteredClaimNames.Sub) ??
+             principal.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                return BadRequest(new { success = false, message = "Access token is missing the 'sub' claim (userId)." });
+            }
+
+            var stored = await _tokenService.GetRefreshTokenEntityAsync(request.RefreshToken);
+
+            if (stored == null || stored.UserId != userId)
+                return Unauthorized(new { success = false, message = "Invalid refresh token." });
+
+            if (stored.IsRevoked || stored.Expires <= DateTime.UtcNow)
+                return Unauthorized(new { success = false, message = "Token revoked/expired." });
+
+            // Revocar el refresh token viejo
+            await _tokenService.RevokeRefreshTokenAsync(stored);
+
+            // Crear nuevos
+            var user = await _userManager.FindByIdAsync(userId);
+            var newAccess = await _tokenService.CreateToken(user);
+            var newRefresh = await _tokenService.GenerateAndSaveRefreshTokenAsync(user);
+
+            return Ok(new TokenResponseDTO
+            {
+                Token = newAccess,
+                RefreshToken = newRefresh.Token,
+                Email = user.Email,
+                UserName = user.UserName,
+                Rol = (await _userManager.GetRolesAsync(user)).FirstOrDefault() ?? "User"
+            });
+        }
+
+
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] RefreshRequestDto req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.RefreshToken))
+                return BadRequest(new { success = false, message = "Missing refresh token." });
+
+            var stored = await _tokenService.GetRefreshTokenEntityAsync(req.RefreshToken);
+            if (stored == null)
+                return NotFound(new { success = false, message = "Refresh token not found." });
+
+            // 🔥 Obtener userId del token
+            var userId = stored.UserId;
+
+            // 🔥 BORRAR TODOS los tokens del usuario
+            await _tokenService.RevokeAllTokensForUserAsync(userId);
+
+            return Ok(new { success = true, message = "All refresh tokens deleted." });
+        }
 
         [HttpPost("reset-password")]
         public async Task<ActionResult<AuthResponseDTO>> ResetPassword(ResetPasswordDTO model)
@@ -213,7 +294,7 @@ namespace Server.Controllers
 
             if (user == null)
             {
-                return Unauthorized(new AuthResponseDTO
+                return BadRequest(new AuthResponseDTO
                 {
                     Success = false,
                     Message = "Invalid email."
@@ -253,7 +334,7 @@ namespace Server.Controllers
                 });
             }
 
-            //var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            //var token = await _user_manager.GeneratePasswordResetTokenAsync(user);
             //var encodedToken = WebUtility.UrlEncode(token);
 
             //var resetLink = $"{_config["FrontendUrl"]}/reset-password?email={user.Email}&token={encodedToken}";
@@ -268,5 +349,12 @@ namespace Server.Controllers
             });
         }
 
+        // ---------- Helpers internos ----------
+
+        // Evita typo al crear token (centraliza para mantener nombre correcto)
+        private async Task<string> _token_service_create_token_safe(IdentityUser user)
+        {
+            return await _tokenService.CreateToken(user);
+        }
     }
 }

@@ -10,13 +10,18 @@ namespace Server.Repositories
         public UnitOfWork(DbContext_app db)
         {
             _db = db;
+
             UserRepository = new UserRepository(_db);
 
             OrderRepository = new OrderRepository(_db);
+
+            RefreshTokenRepository = new RefreshTokenRepository(_db);
         }
 
         public IUserRepository UserRepository { get; private set; }
         public IOrderRepository OrderRepository { get; private set; }
+
+        public IRefreshTokenRepository RefreshTokenRepository { get; private set; }
 
 
         public void Save()

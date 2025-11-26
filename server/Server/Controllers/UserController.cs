@@ -7,7 +7,8 @@ using Server.Repositories.IRepositories;
 
 namespace Server.Controllers
 {
-    [Authorize(Roles = Roles.Role_Admin)]
+    //[Authorize(Roles = Roles.Role_Admin)]
+    [Authorize]
     public class UserController : Base_Control_Api
     {
         private readonly IUnitOfWork _unitOfWork;

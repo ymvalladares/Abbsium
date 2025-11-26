@@ -4,6 +4,7 @@
     {
         IUserRepository UserRepository { get; }
         IOrderRepository OrderRepository { get; }
+        IRefreshTokenRepository RefreshTokenRepository { get; }
         void Save();
     }
 }

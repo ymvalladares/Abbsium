@@ -72,7 +72,6 @@ C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\Server.MvcApplicationPart
 C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\staticwebassets.build.json
 C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\staticwebassets.development.json
 C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\scopedcss\bundle\Server.styles.css
-C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\Server.csproj.CopyComplete
 C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\Server.dll
 C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\refint\Server.dll
 C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\Server.pdb
@@ -80,3 +79,13 @@ C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\Server.genruntimeconfig.c
 C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\ref\Server.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\Microsoft.Bcl.AsyncInterfaces.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\Microsoft.Bcl.TimeProvider.dll
+C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\Server.staticwebassets.endpoints.json
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\rpswa.dswa.cache.json
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\Server.sourcelink.json
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\rjimswa.dswa.cache.json
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\rjsmrazor.dswa.cache.json
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\rjsmcshtml.dswa.cache.json
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\staticwebassets.build.json.cache
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\staticwebassets.build.endpoints.json
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\staticwebassets.upToDateCheck.txt
+C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\Server.csproj.Up2Date
