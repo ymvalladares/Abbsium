@@ -85,6 +85,10 @@
               "target": "Package",
               "version": "[6.0.36, )"
             },
+            "OpenAI": {
+              "target": "Package",
+              "version": "[2.8.0, )"
+            },
             "Pomelo.EntityFrameworkCore.MySql": {
               "target": "Package",
               "version": "[6.0.3, )"

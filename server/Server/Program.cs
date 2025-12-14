@@ -30,8 +30,7 @@ builder.Services.AddDbContext<DbContext_app>(
         );
 
 //this file is generated for the file identity; you have that modificate
-builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DbContext_app>().AddDefaultTokenProviders(); ;
-
+builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DbContext_app>().AddDefaultTokenProviders(); 
 
 
 builder.Services.AddControllers();
