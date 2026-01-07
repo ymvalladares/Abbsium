@@ -72,7 +72,7 @@ namespace Server.Controllers
             }
 
             // 4) Asignar rol por defecto
-            await _userManager.AddToRoleAsync(newUser, Roles.Role_Admin);
+            await _userManager.AddToRoleAsync(newUser, Roles.Role_User);
 
             // 5) Respuesta
             return Ok(new AuthResponseDTO
