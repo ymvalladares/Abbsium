@@ -1,9 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using OpenAI.Chat;
 using Server.ModelDTO;
 
 namespace Server.Controllers
 {
+    [Authorize]
     public class AiController : Base_Control_Api
     {
         private readonly IConfiguration _config;

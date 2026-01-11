@@ -15,10 +15,10 @@ namespace Server.Services
     public class TokenService : ITokenService
     {
         private readonly IConfiguration _configuration;
-        private readonly UserManager<IdentityUser> _userManager;
+        private readonly UserManager<User_data> _userManager;
         private readonly DbContext_app _dbContext;
 
-        public TokenService(IConfiguration configuration, UserManager<IdentityUser> userManager, DbContext_app dbContext)
+        public TokenService(IConfiguration configuration, UserManager<User_data> userManager, DbContext_app dbContext)
         {
             _configuration = configuration;
             _userManager = userManager;
@@ -28,7 +28,7 @@ namespace Server.Services
         // -----------------------------------------------------------------
         // ACCESS TOKEN (JWT)
         // -----------------------------------------------------------------
-        public async Task<string> CreateToken(IdentityUser user)
+        public async Task<string> CreateToken(User_data user)
         {
             var jwtSettings = _configuration.GetSection("JwtSettings");
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]));

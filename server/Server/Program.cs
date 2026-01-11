@@ -1,10 +1,11 @@
 using AutoMapper;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Server.Data;
+using Server.Entitys;
 using Server.Helpers;
 using Server.Middleware;
 using Server.Repositories;
@@ -30,7 +31,10 @@ builder.Services.AddDbContext<DbContext_app>(
         );
 
 //this file is generated for the file identity; you have that modificate
-builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DbContext_app>().AddDefaultTokenProviders(); 
+builder.Services.AddIdentity<User_data, IdentityRole>()
+    .AddEntityFrameworkStores<DbContext_app>()
+    .AddDefaultTokenProviders();
+
 
 
 builder.Services.AddControllers();
@@ -84,7 +88,13 @@ var app = builder.Build();
 
 //hace q se cree el usuario de ymvalladares como admin en database
 using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var configuration = services.GetRequiredService<IConfiguration>();
 
+    await Server.Services.DataSeeder
+        .SeedRolesAndAdminAsync(services, configuration);
+}
 
 
 // Configure the HTTP request pipeline.

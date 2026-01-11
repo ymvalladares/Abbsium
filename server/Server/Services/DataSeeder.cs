@@ -5,7 +5,7 @@ namespace Server.Services
 {
     public static class DataSeeder
     {
-        public static async Task SeedRolesAndAdminAsync(IServiceProvider serviceProvider)
+        public static async Task SeedRolesAndAdminAsync(IServiceProvider serviceProvider, IConfiguration configuration)
         {
             // Usa tu clase personalizada User_data
             var userManager = serviceProvider.GetRequiredService<UserManager<User_data>>();
@@ -22,9 +22,9 @@ namespace Server.Services
             }
 
             // Información del usuario administrador
-            var adminEmail = "yordan.j.martinez@gmail.com";
-            var adminUserName = "ymvalladares";
-            var adminPassword = "Yordan.2020";
+            var adminEmail = configuration["AdminUser:adminEmail"];
+            var adminUserName = configuration["AdminUser:adminUserName"];
+            var adminPassword = configuration["AdminUser:Password"];
 
             var existingAdmin = await userManager.FindByEmailAsync(adminEmail);
             User_data adminUser;
@@ -55,7 +55,7 @@ namespace Server.Services
             var rolesForUser = await userManager.GetRolesAsync(adminUser);
             if (!rolesForUser.Contains("Admin"))
             {
-                var roleResult = await userManager.AddToRoleAsync(adminUser, "Admin");
+                var roleResult = await userManager.AddToRoleAsync(adminUser, Roles.Role_Admin);
 
                 if (!roleResult.Succeeded)
                 {

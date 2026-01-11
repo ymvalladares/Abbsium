@@ -14,19 +14,19 @@ namespace Server.Controllers
     public class AccountController : Base_Control_Api
     {
         private readonly DbContext_app _db;
-        private readonly UserManager<IdentityUser> _userManager;
-        private readonly SignInManager<IdentityUser> _signInManager;
+        private readonly UserManager<User_data> _userManager;
+        private readonly SignInManager<User_data> _signInManager;
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly ITokenService _tokenService;
         private readonly IConfiguration _config;
 
         public AccountController(
-            DbContext_app db,
-            UserManager<IdentityUser> userManager,
-            SignInManager<IdentityUser> signInManager,
-            RoleManager<IdentityRole> roleManager,
-            ITokenService tokenService,
-            IConfiguration config)
+        DbContext_app db,
+        UserManager<User_data> userManager,
+        SignInManager<User_data> signInManager,
+        RoleManager<IdentityRole> roleManager,
+        ITokenService tokenService,
+        IConfiguration config)
         {
             _db = db;
             _userManager = userManager;
@@ -35,6 +35,7 @@ namespace Server.Controllers
             _tokenService = tokenService;
             _config = config;
         }
+
 
         [HttpPost("register")]
         public async Task<ActionResult<AuthResponseDTO>> Register(RegisterDTO model)
@@ -352,7 +353,7 @@ namespace Server.Controllers
         // ---------- Helpers internos ----------
 
         // Evita typo al crear token (centraliza para mantener nombre correcto)
-        private async Task<string> _token_service_create_token_safe(IdentityUser user)
+        private async Task<string> _token_service_create_token_safe(User_data user)
         {
             return await _tokenService.CreateToken(user);
         }
