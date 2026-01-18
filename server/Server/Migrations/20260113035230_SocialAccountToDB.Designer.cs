@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Server.Data;
 
@@ -10,9 +11,10 @@ using Server.Data;
 namespace Server.Migrations
 {
     [DbContext(typeof(DbContext_app))]
-    partial class DbContext_appModelSnapshot : ModelSnapshot
+    [Migration("20260113035230_SocialAccountToDB")]
+    partial class SocialAccountToDB
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -309,6 +311,10 @@ namespace Server.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.Property<string>("ProviderUserId")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
                     b.Property<string>("RefreshToken")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -319,11 +325,9 @@ namespace Server.Migrations
 
                     b.Property<string>("UserId")
                         .IsRequired()
-                        .HasColumnType("varchar(255)");
+                        .HasColumnType("longtext");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("SocialAccounts");
                 });
@@ -406,17 +410,6 @@ namespace Server.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Server.Entitys.SocialAccount", b =>
-                {
-                    b.HasOne("Server.Entitys.User_data", "User_data")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User_data");
                 });
 #pragma warning restore 612, 618
         }

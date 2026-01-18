@@ -8,6 +8,7 @@ using Server.Repositories.IRepositories;
 using System.Net;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Server.Controllers
 {
@@ -214,38 +215,39 @@ namespace Server.Controllers
             }
         }
 
+
         [HttpPost("refresh-token")]
         public async Task<IActionResult> Refresh(RefreshRequestDto request)
         {
-            if (string.IsNullOrWhiteSpace(request.AccessToken) || string.IsNullOrWhiteSpace(request.RefreshToken))
-                return BadRequest(new { success = false, message = "Invalid request." });
+            if (string.IsNullOrWhiteSpace(request.RefreshToken))
+                return BadRequest(new { success = false, message = "Refresh token is required." });
 
-            var principal = _tokenService.GetPrincipalFromExpiredToken(request.AccessToken);
-            if (principal == null)
-                return BadRequest(new { success = false, message = "Invalid access token." });
-
-            var userId =
-             principal.FindFirstValue(JwtRegisteredClaimNames.Sub) ??
-             principal.FindFirstValue(ClaimTypes.NameIdentifier);
-
-            if (string.IsNullOrEmpty(userId))
-            {
-                return BadRequest(new { success = false, message = "Access token is missing the 'sub' claim (userId)." });
-            }
-
+            // 1. Buscar refresh token en DB
             var stored = await _tokenService.GetRefreshTokenEntityAsync(request.RefreshToken);
 
-            if (stored == null || stored.UserId != userId)
+            if (stored == null)
                 return Unauthorized(new { success = false, message = "Invalid refresh token." });
 
+            // 2. Verificar expiración y revocación
             if (stored.IsRevoked || stored.Expires <= DateTime.UtcNow)
-                return Unauthorized(new { success = false, message = "Token revoked/expired." });
+            {
+                await _tokenService.DeleteRefreshTokenAsync(stored);
+                return Unauthorized(new { success = false, message = "Refresh token expired or revoked." });
+            }
 
-            // Revocar el refresh token viejo
-            await _tokenService.RevokeRefreshTokenAsync(stored);
+            // 3. Obtener usuario desde refresh token
+            var user = await _userManager.FindByIdAsync(stored.UserId);
 
-            // Crear nuevos
-            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                await _tokenService.DeleteRefreshTokenAsync(stored);
+                return Unauthorized(new { success = false, message = "User not found." });
+            }
+
+            // 4. Eliminar refresh token usado (rotación)
+            await _tokenService.DeleteRefreshTokenAsync(stored);
+
+            // 5. Crear nuevos tokens
             var newAccess = await _tokenService.CreateToken(user);
             var newRefresh = await _tokenService.GenerateAndSaveRefreshTokenAsync(user);
 
@@ -260,24 +262,20 @@ namespace Server.Controllers
         }
 
 
+        [Authorize]
         [HttpPost("logout")]
-        public async Task<IActionResult> Logout([FromBody] RefreshRequestDto req)
+        public async Task<IActionResult> Logout()
         {
-            if (req == null || string.IsNullOrWhiteSpace(req.RefreshToken))
-                return BadRequest(new { success = false, message = "Missing refresh token." });
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-            var stored = await _tokenService.GetRefreshTokenEntityAsync(req.RefreshToken);
-            if (stored == null)
-                return NotFound(new { success = false, message = "Refresh token not found." });
+            if (string.IsNullOrEmpty(userId))
+                return BadRequest(new { success = false, message = "User not found in token." });
 
-            // 🔥 Obtener userId del token
-            var userId = stored.UserId;
-
-            // 🔥 BORRAR TODOS los tokens del usuario
-            await _tokenService.RevokeAllTokensForUserAsync(userId);
+            await _tokenService.RevokeTokensForUserAsync(userId);
 
             return Ok(new { success = true, message = "All refresh tokens deleted." });
         }
+
 
         [HttpPost("reset-password")]
         public async Task<ActionResult<AuthResponseDTO>> ResetPassword(ResetPasswordDTO model)

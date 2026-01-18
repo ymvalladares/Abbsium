@@ -1,19 +1,20 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Server.Entitys;
+﻿using Server.Entitys;
 using System.Security.Claims;
 
-namespace Server.Repositories.IRepositories
+public interface ITokenService
 {
-    public interface ITokenService
-    {
-        // Task<string> CreateToken(IdentityUser user);
+    Task<string> CreateToken(User_data user);
 
-        Task<string> CreateToken(User_data user);               // JWT (access)
-        string CreateRefreshToken();                               // generar refresh token
-        Task<RefreshToken> GenerateAndSaveRefreshTokenAsync(IdentityUser user, TimeSpan? ttl = null);
-        ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
-        Task<RefreshToken?> GetRefreshTokenEntityAsync(string refreshToken);
-        Task RevokeRefreshTokenAsync(RefreshToken token);
-        Task RevokeAllTokensForUserAsync(string userId);
-    }
+    Task<RefreshToken?> GetRefreshTokenEntityAsync(string refreshToken);
+
+    Task<RefreshToken> GenerateAndSaveRefreshTokenAsync(User_data user, TimeSpan? ttl = null);
+
+    Task DeleteRefreshTokenAsync(RefreshToken token);
+
+    Task CleanupExpiredRefreshTokensAsync();
+
+    ClaimsPrincipal? GetPrincipalFromExpiredToken(string token); // opcional si aún lo usas
+
+    Task RevokeTokensForUserAsync(string userId);
+
 }

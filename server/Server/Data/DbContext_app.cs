@@ -15,7 +15,9 @@ namespace Server.Data
 
         public DbSet<User_data> User_Data { get; set; }
         public DbSet<Order> Order { get; set; }
-
         public DbSet<RefreshToken> RefreshTokens { get; set; }
+
+        public DbSet<SocialAccount> SocialAccounts { get; set; }
+
     }
 }
