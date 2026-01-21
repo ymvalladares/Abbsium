@@ -33,7 +33,7 @@ namespace Server.Controllers
                 $"?client_id={_config["Facebook:ClientId"]}" +
                 $"&redirect_uri={_config["Facebook:RedirectUri"]}" +
                 $"&state={state}" +
-                $"&scope=public_profile,email";
+               $"&scope=public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement";
 
             return Ok(new { url });
         }
@@ -114,7 +114,7 @@ namespace Server.Controllers
 
         // ================= DISCONNECT =================
         [Authorize]
-        [HttpDelete("disconnect/{provider}")] // Cambiado a HttpDelete por convención
+        [HttpPost("disconnect/{provider}")] // Cambiado a HttpDelete por convención
         public async Task<IActionResult> Disconnect(string provider)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -178,6 +178,110 @@ namespace Server.Controllers
 
             return Ok(result);
         }
+
+        private async Task<IActionResult> TestFacebookProfile(string accessToken)
+        {
+            using var client = new HttpClient();
+
+            var url =
+                $"https://graph.facebook.com/me" +
+                $"?fields=id,name,email,picture.width(200)" +
+                $"&access_token={accessToken}";
+
+            var res = await client.GetAsync(url);
+
+            if (!res.IsSuccessStatusCode)
+            {
+                var err = await res.Content.ReadAsStringAsync();
+                return BadRequest(new { error = "Facebook API error", details = err });
+            }
+
+            var json = await res.Content.ReadAsStringAsync();
+            return Ok(JsonDocument.Parse(json).RootElement);
+        }
+
+        public class FacebookPostRequest
+        {
+            public string Message { get; set; }    // Texto del post
+            public string PhotoUrl { get; set; }   // URL o Base64 de la foto
+            public string Caption { get; set; }    // Caption de la foto
+        }
+
+        [Authorize]
+        [HttpGet("facebook/test-profile")]
+        public async Task<IActionResult> TestProfile()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var acc = await _db.SocialAccounts
+                .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "facebook" && x.IsActive);
+
+            if (acc == null) return NotFound("Facebook not connected");
+
+            return await TestFacebookProfile(acc.AccessToken);
+        }
+
+        [Authorize]
+        [HttpPost("facebook/post")]
+        public async Task<IActionResult> PostToFacebook([FromBody] FacebookPostRequest request)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            // Buscar cuenta de Facebook activa del usuario
+            var acc = await _db.SocialAccounts
+                .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "facebook" && x.IsActive);
+
+            if (acc == null)
+                return BadRequest("Facebook not connected");
+
+            try
+            {
+                using var client = new HttpClient();
+
+                // Construir request a Graph API
+                var fbUrl = "https://graph.facebook.com/me/photos"; // publicar foto
+                var content = new MultipartFormDataContent();
+
+                if (!string.IsNullOrEmpty(request.PhotoUrl))
+                {
+                    // Si es base64, convertir a byte[]
+                    byte[] bytes;
+                    if (request.PhotoUrl.StartsWith("data:"))
+                    {
+                        var base64Data = request.PhotoUrl.Substring(request.PhotoUrl.IndexOf(",") + 1);
+                        bytes = Convert.FromBase64String(base64Data);
+                    }
+                    else
+                    {
+                        bytes = System.IO.File.ReadAllBytes(request.PhotoUrl);
+                    }
+
+                    content.Add(new ByteArrayContent(bytes), "source", "photo.jpg");
+                }
+
+                content.Add(new StringContent(request.Message ?? ""), "message");
+
+                // token de acceso
+                content.Add(new StringContent(acc.AccessToken), "access_token");
+
+                var fbResponse = await client.PostAsync(fbUrl, content);
+                var responseString = await fbResponse.Content.ReadAsStringAsync();
+
+                if (!fbResponse.IsSuccessStatusCode)
+                {
+                    return BadRequest(new { error = "Facebook API error", details = responseString });
+                }
+
+                return Ok(new { status = "Published", response = responseString });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Server error", details = ex.Message });
+            }
+        }
+
+
+
 
 
 
