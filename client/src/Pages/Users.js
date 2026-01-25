@@ -103,7 +103,7 @@ const Users = () => {
     const fetchUsers = async () => {
       setLoading(true);
       try {
-        const response = await Get_Request(`${window.BaseUrlGeneral}User`);
+        const response = await Get_Request(`${window.BaseUrl}User`);
         setRows(response.data);
         setOriginalRows(response.data);
       } catch (error) {

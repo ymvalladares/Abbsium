@@ -46,6 +46,7 @@ import Layouts from "./Layout/Layouts";
 
 // Auth
 import { useAuth } from "./Hooks/useAuth";
+import AdminSite from "./Pages/AdminSite";
 
 const demoTheme = createTheme({
   cssVariables: {
@@ -86,6 +87,16 @@ function AppWithSnackbar() {
       {
         segment: "investments",
         title: "Investments",
+        icon: <AttachMoneyIcon />,
+      },
+      {
+        segment: "admin-layout",
+        title: "Admin Layout",
+        icon: <AttachMoneyIcon />,
+      },
+      {
+        segment: "users",
+        title: "Users",
         icon: <AttachMoneyIcon />,
       },
     ];
@@ -162,9 +173,12 @@ function AppWithSnackbar() {
               <Route path="payment-denied" element={<Failure_payment />} />
             </Route>
 
-            <Route element={<AdminLayout />}>
+            {/* <Route element={<AdminLayout />}>
               <Route path="users" element={<Users />} />
-            </Route>
+            </Route> */}
+            <Route path="users" element={<Users />} />
+
+            <Route path="admin-layout" element={<AdminSite />} />
 
             <Route path="*" element={<NotFound />} />
           </Route>

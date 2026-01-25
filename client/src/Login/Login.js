@@ -42,7 +42,7 @@ const Login = () => {
   const handleSubmit = async (values, actions) => {
     try {
       const response = await Pots_Request(
-        `${window.BaseUrlGeneral}Account/${userAction}`,
+        `${window.BaseUrl}Account/${userAction}`,
         values
       );
 
@@ -54,7 +54,12 @@ const Login = () => {
             image: "https://avatar.iran.liara.run/public/25",
           };
 
-          login(userData, response.data.token, response.data.rol);
+          login(
+            userData,
+            response.data.token,
+            response.data.rol,
+            response.data.refreshToken
+          );
           actions.resetForm();
           navigate("/dashboard");
         } else if (userAction === "register") {

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Pots_Request } from "../Services/PaymentService";
 
 export const AuthContext = createContext();
 
@@ -35,22 +36,40 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const login = (userData, token, role) => {
+  const login = (userData, accessToken, role, refreshToken) => {
     localStorage.setItem("session", JSON.stringify(userData));
-    localStorage.setItem("TOKEN_KEY", token);
+    localStorage.setItem("TOKEN_KEY", accessToken);
+    localStorage.setItem("REFRESH_KEY", refreshToken);
     localStorage.setItem("role", role);
 
     setUser(userData);
     setRole(role);
   };
 
-  const logout = () => {
-    localStorage.removeItem("session");
-    localStorage.removeItem("TOKEN_KEY");
-    localStorage.removeItem("role");
+  const logout = async () => {
+    const refreshToken = localStorage.getItem("REFRESH_KEY");
+    const tokenKey = localStorage.getItem("TOKEN_KEY");
 
+    // Limpiar localStorage y contexto
     setUser(null);
     setRole(null);
+    localStorage.removeItem("session");
+    localStorage.removeItem("TOKEN_KEY");
+    localStorage.removeItem("REFRESH_KEY");
+    localStorage.removeItem("role");
+
+    if (!refreshToken) return;
+
+    const tokens = {
+      accessToken: tokenKey,
+      refreshToken: refreshToken,
+    };
+
+    try {
+      await Pots_Request(`${window.BaseUrl}Account/logout`, tokens);
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
   };
 
   return (
