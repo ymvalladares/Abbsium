@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Server.Entitys;
 using Server.ModelDTO;
 using Server.Repositories.IRepositories;
+using System.Security.Claims;
 
 namespace Server.Controllers
 {
@@ -98,10 +99,12 @@ namespace Server.Controllers
                         }
                     }
 
-                    return Ok(new
+                    return Ok(new AuthResponseDTO
                     {
-                        message = "User update with password Abbsium.2020"
+                        Success = true,
+                        Message = "User updated successfully"
                     });
+
                 }
                 // ✅ MODO CREATE - Si NO trae ID
                 else
@@ -145,10 +148,12 @@ namespace Server.Controllers
                         return BadRequest(new { errors = roleResult.Errors.Select(e => e.Description) });
                     }
 
-                    return Ok(new
+                    return Ok(new AuthResponseDTO
                     {
-                        message = "User created successfully with default password: Abbsium.2020"
+                        Success = true,
+                        Message = "User created successfully with default password: Abbsium.2020"
                     });
+
                 }
             }
             catch (Exception ex)
@@ -179,10 +184,14 @@ namespace Server.Controllers
                 return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
             }
 
-            return Ok(new { message = "User deleted successfully" });
+            return Ok(new AuthResponseDTO
+            {
+                Success = true,
+                Message = "User deleted successfully"
+            });
+
         }
 
-        // ✅ ENDPOINT PARA ELIMINAR MÚLTIPLES USUARIOS (BULK DELETE)
         [HttpDelete("Delete-Multiple")]
         public async Task<ActionResult> deleteMultipleUsers([FromBody] List<string> userIds)
         {
@@ -222,12 +231,53 @@ namespace Server.Controllers
                 }
             }
 
-            return Ok(new
+            return Ok(new AuthResponseDTO
             {
-                message = $"{deletedCount} user(s) deleted successfully",
-                deletedCount,
-                errors
+                Success = true,
+                Message = $"{deletedCount} user(s) deleted successfully"
             });
+
+
+        }
+
+        [HttpPost("Change-Password")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+        {
+            if (dto.NewPassword != dto.ConfirmPassword)
+                return BadRequest("New password and confirm password do not match");
+
+            // 🔐 ID del usuario logueado desde el JWT
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (string.IsNullOrEmpty(currentUserId))
+                return Unauthorized("Invalid token");
+
+            var user = await _userManager.FindByIdAsync(currentUserId);
+
+            if (user == null)
+                return Unauthorized("User not found");
+
+            // ✅ Identity valida que el old password sea correcto
+            var result = await _userManager.ChangePasswordAsync(
+                user,
+                dto.CurrentPassword,
+                dto.NewPassword
+            );
+
+            if (!result.Succeeded)
+            {
+                return BadRequest(new
+                {
+                    errors = result.Errors.Select(e => e.Description)
+                });
+            }
+
+            return Ok(new AuthResponseDTO
+            {
+                Success = true,
+                Message = "Password changed successfully"
+            });
+
         }
     }
 }

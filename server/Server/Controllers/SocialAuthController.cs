@@ -33,8 +33,7 @@ namespace Server.Controllers
                 $"?client_id={_config["Facebook:ClientId"]}" +
                 $"&redirect_uri={_config["Facebook:RedirectUri"]}" +
                 $"&state={state}" +
-                $"&scope=public_profile";
-
+                $"&scope=email";
             return Ok(new { url });
         }
 
