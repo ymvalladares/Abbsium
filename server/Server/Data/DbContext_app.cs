@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Server.Chat.Entitys;
 using Server.Entitys;
 
 namespace Server.Data
@@ -18,6 +19,10 @@ namespace Server.Data
         public DbSet<RefreshToken> RefreshTokens { get; set; }
 
         public DbSet<SocialAccount> SocialAccounts { get; set; }
+
+        public DbSet<Conversation> Conversations { get; set; }
+
+        public DbSet<Message> Messages { get; set; }
 
     }
 }
