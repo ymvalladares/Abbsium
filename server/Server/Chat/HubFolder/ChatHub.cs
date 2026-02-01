@@ -1,15 +1,19 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Server.Repositories.IRepositories;
+using System.Collections.Concurrent;
 using System.Security.Claims;
 
 namespace Server.Chat.HubFolder
 {
-    [Authorize]
+    //[Authorize]
     public class ChatHub : Hub
     {
         private readonly IChatService _chatService;
         private readonly ILogger<ChatHub> _logger;
+
+        // ⭐ DICCIONARIO ESTÁTICO para rastrear usuarios conectados
+        private static readonly ConcurrentDictionary<string, HashSet<string>> OnlineUsers = new();
 
         public ChatHub(IChatService chatService, ILogger<ChatHub> logger)
         {
@@ -28,18 +32,79 @@ namespace Server.Chat.HubFolder
                 return;
             }
 
+            // ⭐ REGISTRAR usuario como conectado
+            var isFirstConnection = false;
+            OnlineUsers.AddOrUpdate(
+                userId,
+                new HashSet<string> { Context.ConnectionId },
+                (key, existing) =>
+                {
+                    if (existing.Count == 0) isFirstConnection = true;
+                    existing.Add(Context.ConnectionId);
+                    return existing;
+                }
+            );
+
+            if (isFirstConnection || OnlineUsers[userId].Count == 1)
+            {
+                await Clients.All.SendAsync("userStatusChanged", new
+                {
+                    userId = userId,
+                    isOnline = true
+                });
+            }
+
+            // ⭐ AGREGAR A GRUPOS - MUY IMPORTANTE
             if (userRole == "Admin")
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"Admin_{userId}");
-                _logger.LogInformation($"✅ Admin {userId} connected");
+                _logger.LogInformation($"✅ Admin {userId} joined group: Admin_{userId}");
             }
             else
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"User_{userId}");
-                _logger.LogInformation($"✅ User {userId} connected");
+                _logger.LogInformation($"✅ User {userId} joined group: User_{userId}");
             }
 
             await base.OnConnectedAsync();
+        }
+
+        public override async Task OnDisconnectedAsync(Exception exception)
+        {
+            var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (!string.IsNullOrEmpty(userId))
+            {
+                // ⭐ ELIMINAR esta conexión específica
+                if (OnlineUsers.TryGetValue(userId, out var connections))
+                {
+                    connections.Remove(Context.ConnectionId);
+
+                    // Si ya no tiene conexiones, está offline
+                    if (connections.Count == 0)
+                    {
+                        OnlineUsers.TryRemove(userId, out _);
+
+                        _logger.LogInformation($"❌ User {userId} is NOW OFFLINE");
+
+                        // ⭐ NOTIFICAR A TODOS que este usuario está offline
+                        await Clients.All.SendAsync("userStatusChanged", new
+                        {
+                            userId = userId,
+                            isOnline = false
+                        });
+                    }
+                }
+            }
+
+            await base.OnDisconnectedAsync(exception);
+        }
+
+        // ⭐ NUEVO: Endpoint para obtener usuarios online actuales
+        public async Task GetOnlineUsers()
+        {
+            var onlineUserIds = OnlineUsers.Keys.ToList();
+            await Clients.Caller.SendAsync("onlineUsersList", onlineUserIds);
         }
 
         // Usuario envía mensaje a Admin específico
@@ -58,7 +123,7 @@ namespace Server.Chat.HubFolder
             {
                 var message = await _chatService.SendUserMessageAsync(userId, adminId, content);
 
-                // Confirmar al usuario
+                // ⭐ CONFIRMAR al usuario - MISMO NOMBRE que en frontend
                 await Clients.Caller.SendAsync("messageSent", new
                 {
                     id = message.Id,
@@ -67,7 +132,9 @@ namespace Server.Chat.HubFolder
                     isAdminMessage = false
                 });
 
-                // Notificar al Admin específico
+                _logger.LogInformation($"✅ Sent 'messageSent' to User {userId}");
+
+                // ⭐ NOTIFICAR al Admin - MISMO NOMBRE que en frontend
                 await Clients.Group($"Admin_{adminId}").SendAsync("newUserMessage", new
                 {
                     conversationId = message.ConversationId,
@@ -78,7 +145,7 @@ namespace Server.Chat.HubFolder
                     sentAt = message.SentAt
                 });
 
-                _logger.LogInformation($"User {userId} → Admin {adminId}");
+                _logger.LogInformation($"✅ Sent 'newUserMessage' to Admin_{adminId}");
             }
             catch (Exception ex)
             {
@@ -103,6 +170,7 @@ namespace Server.Chat.HubFolder
             {
                 var (message, targetUserId) = await _chatService.SendAdminReplyAsync(convId, adminId, content);
 
+                // ⭐ CONFIRMAR al admin - MISMO NOMBRE que en frontend
                 await Clients.Caller.SendAsync("adminReplySent", new
                 {
                     id = message.Id,
@@ -111,6 +179,9 @@ namespace Server.Chat.HubFolder
                     isAdminMessage = true
                 });
 
+                _logger.LogInformation($"✅ Sent 'adminReplySent' to Admin {adminId}");
+
+                // ⭐ NOTIFICAR al usuario - MISMO NOMBRE que en frontend
                 await Clients.Group($"User_{targetUserId}").SendAsync("newAdminMessage", new
                 {
                     messageId = message.Id,
@@ -119,7 +190,7 @@ namespace Server.Chat.HubFolder
                     sentAt = message.SentAt
                 });
 
-                _logger.LogInformation($"Admin {adminId} → User {targetUserId}");
+                _logger.LogInformation($"✅ Sent 'newAdminMessage' to User_{targetUserId}");
             }
             catch (Exception ex)
             {
