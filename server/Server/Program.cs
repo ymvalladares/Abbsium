@@ -107,13 +107,16 @@ builder.Services.AddCors(options =>
                 "http://localhost:3000",
                 "http://localhost:5173",
                 "http://localhost:5174",
-                "https://localhost:3000"
+                "https://localhost:3000",
+                "https://abbsium.com",
+                "https://www.abbsium.com"
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
     });
 });
+
 
 /* =========================
    SIGNALR
