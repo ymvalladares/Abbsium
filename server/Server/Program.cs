@@ -11,7 +11,9 @@ using Server.Middleware;
 using Server.Repositories;
 using Server.Repositories.IRepositories;
 using Stripe;
+using System;
 using System.Text;
+using static Server.Services.EmailSender;
 
 var builder = WebApplication.CreateBuilder(args);
 var serverVersion = new MySqlServerVersion(new Version(8, 0, 29));
@@ -23,6 +25,8 @@ var serverVersion = new MySqlServerVersion(new Version(8, 0, 29));
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ITokenService, Server.Services.TokenService>();
 builder.Services.AddScoped<IChatService, Server.Services.ChatService>();
+builder.Services.AddScoped<IEmailSender, EmailService>();
+
 
 builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);
 
@@ -44,6 +48,9 @@ builder.Services.AddDbContext<DbContext_app>(options =>
 builder.Services.AddIdentity<User_data, IdentityRole>()
     .AddEntityFrameworkStores<DbContext_app>()
     .AddDefaultTokenProviders();
+
+
+
 
 /* =========================
    JWT AUTH

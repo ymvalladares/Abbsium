@@ -1,14 +1,18 @@
 ﻿using Google.Apis.Auth;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Server.Data;
+using Server.EmailTemplates;
 using Server.Entitys;
 using Server.ModelDTO;
 using Server.Repositories.IRepositories;
+using Server.Services;
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Claims;
-using System.IdentityModel.Tokens.Jwt;
-using Microsoft.AspNetCore.Authorization;
+using System.Text;
 
 namespace Server.Controllers
 {
@@ -20,6 +24,7 @@ namespace Server.Controllers
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly ITokenService _tokenService;
         private readonly IConfiguration _config;
+        private readonly IEmailSender _emailSender;
 
         public AccountController(
         DbContext_app db,
@@ -27,7 +32,8 @@ namespace Server.Controllers
         SignInManager<User_data> signInManager,
         RoleManager<IdentityRole> roleManager,
         ITokenService tokenService,
-        IConfiguration config)
+        IConfiguration config,
+        IEmailSender emailSender)
         {
             _db = db;
             _userManager = userManager;
@@ -35,6 +41,7 @@ namespace Server.Controllers
             _roleManager = roleManager;
             _tokenService = tokenService;
             _config = config;
+            _emailSender = emailSender;
         }
 
 
@@ -62,6 +69,21 @@ namespace Server.Controllers
             };
 
             var result = await _userManager.CreateAsync(newUser, model.Password);
+
+            // Generar token de confirmación
+            var token = await _userManager.GenerateEmailConfirmationTokenAsync(newUser);
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+            // Construir link
+            var confirmLink = $"{_config["ClientUrl"]}/email-confirmed?userId={newUser.Id}&token={encodedToken}";
+
+            // Enviar email
+            await _emailSender.SendEmail(new Email
+            {
+                To = model.Email,
+                Subject = "Confirm your Abbsium account",
+                Body = EmailConfirmationTemplate.Build(confirmLink)
+            });
 
             if (!result.Succeeded)
             {
@@ -135,6 +157,7 @@ namespace Server.Controllers
                 RefreshToken = refreshEntity.Token,
                 Email = user.Email,
                 UserName = user.UserName,
+                EmailConfirmed = user.EmailConfirmed,
                 Rol = roles.FirstOrDefault() ?? "User"
             });
         }
@@ -194,6 +217,7 @@ namespace Server.Controllers
                     RefreshToken = refreshEntity.Token,
                     Email = user.Email,
                     UserName = user.UserName,
+                    EmailConfirmed = user.EmailConfirmed,
                     Rol = roles.FirstOrDefault() ?? "User"
                 });
             }
@@ -257,6 +281,7 @@ namespace Server.Controllers
                 RefreshToken = newRefresh.Token,
                 Email = user.Email,
                 UserName = user.UserName,
+                EmailConfirmed = user.EmailConfirmed,
                 Rol = (await _userManager.GetRolesAsync(user)).FirstOrDefault() ?? "User"
             });
         }
@@ -347,6 +372,24 @@ namespace Server.Controllers
                 Message = "Reset link sent. Please check your email."
             });
         }
+
+
+        [HttpGet("confirm-email")]
+        public async Task<IActionResult> ConfirmEmail(string userId, string token)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+                return NotFound("User not found");
+
+            var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token));
+            var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
+
+            if (!result.Succeeded)
+                return BadRequest("Invalid or expired token");
+
+            return Ok();
+        }
+
 
         // ---------- Helpers internos ----------
 
