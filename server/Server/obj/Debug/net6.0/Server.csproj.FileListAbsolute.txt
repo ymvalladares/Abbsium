@@ -96,7 +96,6 @@ C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\ref\Server.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\Microsoft.Extensions.DependencyInjection.Abstractions.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\System.Net.ServerSentEvents.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\System.Text.Encodings.Web.dll
-C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\runtimes\browser\lib\net6.0\System.Text.Encodings.Web.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\BouncyCastle.Cryptography.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\MailKit.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\MimeKit.dll
@@ -105,3 +104,6 @@ C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\System.Security.Cryptogra
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\System.Text.Encoding.CodePages.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\runtimes\win\lib\net6.0\System.Security.Cryptography.Pkcs.dll
 C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\runtimes\win\lib\net6.0\System.Text.Encoding.CodePages.dll
+C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\RestSharp.dll
+C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\System.IO.Pipelines.dll
+C:\Mybook\React\Abbsium\Server\Server\bin\Debug\net6.0\System.Runtime.CompilerServices.Unsafe.dll

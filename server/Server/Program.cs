@@ -10,10 +10,10 @@ using Server.Helpers;
 using Server.Middleware;
 using Server.Repositories;
 using Server.Repositories.IRepositories;
+using Server.Services;
 using Stripe;
 using System;
 using System.Text;
-using static Server.Services.EmailSender;
 
 var builder = WebApplication.CreateBuilder(args);
 var serverVersion = new MySqlServerVersion(new Version(8, 0, 29));
