@@ -167,46 +167,66 @@ namespace Server.Controllers
         {
             try
             {
-                var payload = await GoogleJsonWebSignature.ValidateAsync(idToken);
+                var settings = new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { _config["Google:ClientId"] }
+                };
+
+                var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
                 var user = await _userManager.FindByEmailAsync(payload.Email);
 
                 if (user == null)
                 {
+                    // ── Nuevo user con Google ──
                     user = new User_data
                     {
                         Email = payload.Email,
-                        UserName = payload.Email,
+                        UserName = payload.GivenName ?? payload.Email,
                         EmailConfirmed = true
                     };
 
-                    var result = await _userManager.CreateAsync(user);
-                    if (!result.Succeeded)
+                    var createResult = await _userManager.CreateAsync(user);
+                    if (!createResult.Succeeded)
                     {
-                        var errors = string.Join("; ", result.Errors.Select(e => e.Description));
+                        var errors = string.Join("; ", createResult.Errors.Select(e => e.Description));
                         return BadRequest(new AuthResponseDTO
                         {
                             Success = false,
-                            Message = $"No se pudo crear el usuario con Google: {errors}"
+                            Message = $"Could not create user: {errors}"
                         });
                     }
 
-                    // Asignar rol por defecto
                     await _userManager.AddToRoleAsync(user, Roles.Role_User);
                 }
                 else
                 {
+                    // ── User ya existe ──
                     var hasPassword = await _userManager.HasPasswordAsync(user);
+
                     if (hasPassword)
                     {
-                        return BadRequest(new AuthResponseDTO
+                        var googleLoginInfo = await _userManager.FindByLoginAsync("Google", payload.Subject);
+
+                        if (googleLoginInfo == null)
                         {
-                            Success = false,
-                            Message = "Use the traditional login for this email"
-                        });
+                            // Primera vez usando Google con cuenta manual → vincula la cuenta
+                            await _userManager.AddLoginAsync(user, new UserLoginInfo(
+                                "Google",
+                                payload.Subject,
+                                "Google"
+                            ));
+                        }
+                    }
+
+                    // Se registró con Google → asegura EmailConfirmed = true
+                    if (!user.EmailConfirmed)
+                    {
+                        user.EmailConfirmed = true;
+                        await _userManager.UpdateAsync(user);
                     }
                 }
 
-                // Generar tokens (access + refresh)
+                // ── Genera tokens igual que login normal ──
                 var token = await _tokenService.CreateToken(user);
                 var refreshEntity = await _tokenService.GenerateAndSaveRefreshTokenAsync(user);
                 var roles = await _userManager.GetRolesAsync(user);
@@ -226,7 +246,7 @@ namespace Server.Controllers
                 return BadRequest(new AuthResponseDTO
                 {
                     Success = false,
-                    Message = "Token de Google inválido o expirado."
+                    Message = "Invalid or expired Google token."
                 });
             }
             catch (Exception ex)
@@ -234,7 +254,7 @@ namespace Server.Controllers
                 return StatusCode(500, new AuthResponseDTO
                 {
                     Success = false,
-                    Message = $"Error interno: {ex.Message}"
+                    Message = $"Internal error: {ex.Message}"
                 });
             }
         }
@@ -305,44 +325,21 @@ namespace Server.Controllers
         [HttpPost("reset-password")]
         public async Task<ActionResult<AuthResponseDTO>> ResetPassword(ResetPasswordDTO model)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(new AuthResponseDTO
-                {
-                    Success = false,
-                    Message = "Invalid reset data."
-                });
-            }
-
             var user = await _userManager.FindByEmailAsync(model.Email);
-
             if (user == null)
-            {
-                return BadRequest(new AuthResponseDTO
-                {
-                    Success = false,
-                    Message = "Invalid email."
-                });
-            }
+                return BadRequest(new AuthResponseDTO { Success = false, Message = "Invalid email." });
 
-            var resetResult = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
+            // Decodifica el token ← esto es clave
+            var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(model.Token));
 
+            var resetResult = await _userManager.ResetPasswordAsync(user, decodedToken, model.NewPassword);
             if (!resetResult.Succeeded)
             {
                 var errors = string.Join(" ", resetResult.Errors.Select(e => e.Description));
-
-                return BadRequest(new AuthResponseDTO
-                {
-                    Success = false,
-                    Message = $"Password reset failed: {errors}"
-                });
+                return BadRequest(new AuthResponseDTO { Success = false, Message = $"Password reset failed: {errors}" });
             }
 
-            return Ok(new AuthResponseDTO
-            {
-                Success = true,
-                Message = "Password has been reset successfully."
-            });
+            return Ok(new AuthResponseDTO { Success = true, Message = "Password has been reset successfully." });
         }
 
         [HttpPost("forgetPassword")]
@@ -358,13 +355,16 @@ namespace Server.Controllers
                 });
             }
 
-            //var token = await _user_manager.GeneratePasswordResetTokenAsync(user);
-            //var encodedToken = WebUtility.UrlEncode(token);
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+            var resetLink = $"{_config["ClientUrl"]}/reset-password?email={user.Email}&token={encodedToken}";
 
-            //var resetLink = $"{_config["FrontendUrl"]}/reset-password?email={user.Email}&token={encodedToken}";
-
-            // Aquí llamas a tu servicio de email
-            //await _emailService.SendAsync(user.Email, "Password Reset", $"Reset your password: {resetLink}");
+            await _emailSender.SendEmail(new Email
+            {
+                To = user.Email,
+                Subject = "Reset your Abbsium password",
+                Body = PasswordResetTemplate.Build(resetLink)
+            });
 
             return Ok(new AuthResponseDTO
             {
