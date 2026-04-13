@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Server.EmailTemplates;
 using Server.Entitys;
 using Server.Repositories.IRepositories;
 using Stripe;
@@ -12,10 +13,14 @@ namespace Server.Controllers
     public class OrderController : Base_Control_Api
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IEmailSender _emailSender;
+        private readonly IConfiguration _config;
 
-        public OrderController(IUnitOfWork unitOfWork)
+        public OrderController(IUnitOfWork unitOfWork, IEmailSender emailSender, IConfiguration config)
         {
             _unitOfWork = unitOfWork;
+            _emailSender = emailSender;
+            _config = config;
         }
 
         [HttpPost("create-checkout-session")]
@@ -181,6 +186,40 @@ namespace Server.Controllers
 
                 _unitOfWork.OrderRepository.Add(order);
                 _unitOfWork.Save();
+
+                // Notificar al admin
+                var user =  _unitOfWork.UserRepository.GetFirstOrDefault(u => u.Id == userId);
+
+                // Email al admin (ya lo tienes)
+                await _emailSender.SendEmail(new Email
+                {
+                    To = _config["AdminUser:adminEmail"],
+                    Subject = $"New Order — {GetPlanName(serviceType)}",
+                    Body = NewOrderTemplate.Build(
+                        userName: user?.UserName ?? userId,
+                        userEmail: user?.Email ?? "unknown",
+                        planName: GetPlanName(serviceType),
+                        planMode: planMode,
+                        amount: amount,
+                        currency: (session.Currency ?? "usd").ToUpper(),
+                        orderId: dedupeId
+                    )
+                });
+
+                // Email al user confirmando su orden
+                await _emailSender.SendEmail(new Email
+                {
+                    To = user?.Email ?? "unknown",
+                    Subject = $"Your {GetPlanName(serviceType)} order is confirmed!",
+                    Body = OrderConfirmationTemplate.Build(
+                        userName: user?.UserName ?? "there",
+                        planName: GetPlanName(serviceType),
+                        planMode: planMode,
+                        amount: amount,
+                        currency: (session.Currency ?? "usd").ToUpper(),
+                        orderId: dedupeId
+                    )
+                });
             }
 
             return Ok(new
