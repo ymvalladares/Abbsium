@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
+using Server.Entitys;
 using Server.Repositories.IRepositories;
 using System.Collections.Concurrent;
 using System.Security.Claims;
@@ -10,14 +12,21 @@ namespace Server.Chat.HubFolder
     public class ChatHub : Hub
     {
         private readonly IChatService _chatService;
+        private readonly UserManager<User_data> _userManager;
         private readonly ILogger<ChatHub> _logger;
 
         // ⭐ DICCIONARIO ESTÁTICO para rastrear usuarios conectados
-        private static readonly ConcurrentDictionary<string, HashSet<string>> OnlineUsers = new();
+        private class OnlineUserInfo
+        {
+            public HashSet<string> ConnectionIds { get; set; } = new();
+            public string UserName { get; set; } = "";
+        }
+        private static readonly ConcurrentDictionary<string, OnlineUserInfo> OnlineUsers = new();
 
-        public ChatHub(IChatService chatService, ILogger<ChatHub> logger)
+        public ChatHub(IChatService chatService, UserManager<User_data> userManager, ILogger<ChatHub> logger)
         {
             _chatService = chatService;
+            _userManager = userManager;
             _logger = logger;
         }
 
@@ -33,23 +42,37 @@ namespace Server.Chat.HubFolder
             }
 
             // ⭐ REGISTRAR usuario como conectado
+            var userName = Context.User.FindFirst(ClaimTypes.Name)?.Value ?? "";
+            // Fallback: buscar nombre desde la BD si el claim no está en el token
+            if (string.IsNullOrEmpty(userName))
+            {
+                var user = await _userManager.FindByIdAsync(userId);
+                userName = user?.UserName ?? "";
+            }
             var isFirstConnection = false;
+
             OnlineUsers.AddOrUpdate(
                 userId,
-                new HashSet<string> { Context.ConnectionId },
-                (key, existing) =>
+                _ => new OnlineUserInfo
                 {
-                    if (existing.Count == 0) isFirstConnection = true;
-                    existing.Add(Context.ConnectionId);
+                    ConnectionIds = new HashSet<string> { Context.ConnectionId },
+                    UserName = userName
+                },
+                (_, existing) =>
+                {
+                    if (existing.ConnectionIds.Count == 0) isFirstConnection = true;
+                    existing.ConnectionIds.Add(Context.ConnectionId);
+                    existing.UserName = userName;
                     return existing;
                 }
             );
 
-            if (isFirstConnection || OnlineUsers[userId].Count == 1)
+            if (isFirstConnection || OnlineUsers[userId].ConnectionIds.Count == 1)
             {
                 await Clients.All.SendAsync("userStatusChanged", new
                 {
                     userId = userId,
+                    userName = userName,
                     isOnline = true
                 });
             }
@@ -76,13 +99,14 @@ namespace Server.Chat.HubFolder
             if (!string.IsNullOrEmpty(userId))
             {
                 // ⭐ ELIMINAR esta conexión específica
-                if (OnlineUsers.TryGetValue(userId, out var connections))
+                if (OnlineUsers.TryGetValue(userId, out var info))
                 {
-                    connections.Remove(Context.ConnectionId);
+                    info.ConnectionIds.Remove(Context.ConnectionId);
 
                     // Si ya no tiene conexiones, está offline
-                    if (connections.Count == 0)
+                    if (info.ConnectionIds.Count == 0)
                     {
+                        var disconnectedUserName = info.UserName;
                         OnlineUsers.TryRemove(userId, out _);
 
                         _logger.LogInformation($"❌ User {userId} is NOW OFFLINE");
@@ -91,6 +115,7 @@ namespace Server.Chat.HubFolder
                         await Clients.All.SendAsync("userStatusChanged", new
                         {
                             userId = userId,
+                            userName = disconnectedUserName,
                             isOnline = false
                         });
                     }
@@ -100,11 +125,18 @@ namespace Server.Chat.HubFolder
             await base.OnDisconnectedAsync(exception);
         }
 
-        // ⭐ NUEVO: Endpoint para obtener usuarios online actuales
+        // ⭐ Endpoint para obtener usuarios online actuales con nombres
         public async Task GetOnlineUsers()
         {
-            var onlineUserIds = OnlineUsers.Keys.ToList();
-            await Clients.Caller.SendAsync("onlineUsersList", onlineUserIds);
+            var onlineUsers = OnlineUsers
+                .Where(kvp => kvp.Value.ConnectionIds.Count > 0)
+                .Select(kvp => new
+                {
+                    userId = kvp.Key,
+                    userName = kvp.Value.UserName
+                })
+                .ToList();
+            await Clients.Caller.SendAsync("onlineUsersList", onlineUsers);
         }
 
         // Usuario envía mensaje a Admin específico
@@ -201,13 +233,26 @@ namespace Server.Chat.HubFolder
 
         public async Task MarkAsRead(string conversationId)
         {
-            var userId = Context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!Guid.TryParse(conversationId, out var convId)) return;
+            var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userRole = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
+            if (string.IsNullOrEmpty(userId) || !Guid.TryParse(conversationId, out var convId)) return;
 
             try
             {
-                await _chatService.MarkMessagesAsReadAsync(convId, userId);
+                var (readMessageIds, otherUserId) = await _chatService.MarkMessagesAsReadAsync(convId, userId);
                 await Clients.Caller.SendAsync("messagesMarkedAsRead", conversationId);
+
+                // Notificar al remitente que sus mensajes fueron leídos
+                if (readMessageIds.Count > 0 && !string.IsNullOrEmpty(otherUserId))
+                {
+                    var targetGroup = userRole == "Admin" ? $"User_{otherUserId}" : $"Admin_{otherUserId}";
+                    await Clients.Group(targetGroup).SendAsync("messagesRead", new
+                    {
+                        conversationId,
+                        messageIds = readMessageIds,
+                        readBy = userId
+                    });
+                }
             }
             catch (Exception ex)
             {

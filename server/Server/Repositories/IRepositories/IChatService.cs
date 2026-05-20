@@ -13,7 +13,7 @@ namespace Server.Repositories.IRepositories
         Task<IEnumerable<AdminDto>> GetAdminsAsync();
         Task<IEnumerable<ConversationDto>> GetAdminConversationsAsync(string adminId);
         Task<IEnumerable<ConversationDto>> GetUserConversationsAsync(string userId);
-        Task MarkMessagesAsReadAsync(Guid conversationId, string userId);
+        Task<(List<Guid> MessageIds, string OtherUserId)> MarkMessagesAsReadAsync(Guid conversationId, string userId);
         Task<int> GetUnreadCountAsync(string userId);
     }
 }

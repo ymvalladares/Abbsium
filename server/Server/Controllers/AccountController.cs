@@ -158,7 +158,7 @@ namespace Server.Controllers
                 Email = user.Email,
                 UserName = user.UserName,
                 EmailConfirmed = user.EmailConfirmed,
-                Rol = roles.FirstOrDefault() ?? "User"
+                Rol = roles.Contains("Admin") ? "Admin" : (roles.FirstOrDefault() ?? "User")
             });
         }
 
@@ -238,7 +238,7 @@ namespace Server.Controllers
                     Email = user.Email,
                     UserName = user.UserName,
                     EmailConfirmed = user.EmailConfirmed,
-                    Rol = roles.FirstOrDefault() ?? "User"
+                    Rol = roles.Contains("Admin") ? "Admin" : (roles.FirstOrDefault() ?? "User")
                 });
             }
             catch (InvalidJwtException)
@@ -295,6 +295,8 @@ namespace Server.Controllers
             var newAccess = await _tokenService.CreateToken(user);
             var newRefresh = await _tokenService.GenerateAndSaveRefreshTokenAsync(user);
 
+            var refreshRoles = await _userManager.GetRolesAsync(user);
+
             return Ok(new TokenResponseDTO
             {
                 Token = newAccess,
@@ -302,7 +304,7 @@ namespace Server.Controllers
                 Email = user.Email,
                 UserName = user.UserName,
                 EmailConfirmed = user.EmailConfirmed,
-                Rol = (await _userManager.GetRolesAsync(user)).FirstOrDefault() ?? "User"
+                Rol = refreshRoles.Contains("Admin") ? "Admin" : (refreshRoles.FirstOrDefault() ?? "User")
             });
         }
 

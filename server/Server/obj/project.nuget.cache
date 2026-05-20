@@ -104,6 +104,18 @@
       "targetGraphs": [
         "net6.0"
       ]
+    },
+    {
+      "code": "NU1902",
+      "level": "Warning",
+      "message": "Package 'MailKit' 4.15.1 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-9j88-vvj5-vhgr",
+      "projectPath": "C:\\Mybook\\React\\Abbsium\\Server\\Server\\Server.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Mybook\\React\\Abbsium\\Server\\Server\\Server.csproj",
+      "libraryId": "MailKit",
+      "targetGraphs": [
+        "net6.0"
+      ]
     }
   ]
 }

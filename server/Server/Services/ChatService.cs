@@ -24,6 +24,9 @@ namespace Server.Services
         // Usuario envía mensaje a un Admin específico
         public async Task<Message> SendUserMessageAsync(string userId, string adminId, string content)
         {
+            if (userId == adminId)
+                throw new InvalidOperationException("Cannot create a conversation with yourself");
+
             var conversation = await GetOrCreateConversationAsync(userId, adminId);
 
             var message = new Message
@@ -51,6 +54,9 @@ namespace Server.Services
 
             if (conversation == null)
                 throw new KeyNotFoundException("Conversation not found");
+
+            if (conversation.UserId == adminId)
+                throw new InvalidOperationException("Cannot reply to a conversation with yourself");
 
             var message = new Message
             {
@@ -197,13 +203,13 @@ namespace Server.Services
             }).ToList();
         }
 
-        public async Task MarkMessagesAsReadAsync(Guid conversationId, string userId)
+        public async Task<(List<Guid> MessageIds, string OtherUserId)> MarkMessagesAsReadAsync(Guid conversationId, string userId)
         {
             var conversation = await _context.Conversations
                 .Include(c => c.Messages)
                 .FirstOrDefaultAsync(c => c.Id == conversationId);
 
-            if (conversation == null) return;
+            if (conversation == null) return (new List<Guid>(), "");
 
             var isAdmin = await IsUserAdminAsync(userId);
 
@@ -221,6 +227,9 @@ namespace Server.Services
 
             if (messagesToMark.Any())
                 await _context.SaveChangesAsync();
+
+            var otherUserId = isAdmin ? conversation.UserId : conversation.AdminId;
+            return (messagesToMark.Select(m => m.Id).ToList(), otherUserId);
         }
 
         public async Task<int> GetUnreadCountAsync(string userId)
