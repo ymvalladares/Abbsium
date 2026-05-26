@@ -22,5 +22,12 @@ namespace Server.Entitys
 
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public string? ProviderAccountId { get; set; }
+        
+        // Facebook Pages
+        public string? DefaultPageId { get; set; }
+        public string? PageIds { get; set; } // JSON array of page IDs
+        public string? PageNames { get; set; } // JSON array of page names
+        public string? PageAccessTokens { get; set; } // JSON dict: pageId -> pageAccessToken
     }
 }

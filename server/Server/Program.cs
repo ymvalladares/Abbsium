@@ -28,6 +28,8 @@ builder.Services.AddScoped<IChatService, Server.Services.ChatService>();
 builder.Services.AddScoped<IEmailSender, EmailService>();
 
 
+builder.Services.AddHttpClient();
+
 builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);
 
 /* =========================

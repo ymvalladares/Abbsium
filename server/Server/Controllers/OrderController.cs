@@ -53,7 +53,7 @@ namespace Server.Controllers
                         ProductData = new SessionLineItemPriceDataProductDataOptions
                         {
                             Name        = GetPlanName(request.ServiceType),
-                            Description = GetPlanDescription(request.ServiceType),
+                            Description = GetPlanDescription(request.ServiceType, request.Amount, request.Mode),
                             Images      = new List<string> { GetPlanImage(request.ServiceType) }
                         }
                     },
@@ -66,7 +66,8 @@ namespace Server.Controllers
             {
                 { "userId",      userId              },
                 { "serviceType", request.ServiceType },
-                { "planMode",    "payment"           }
+                { "planMode",    "payment"           },
+                { "plan_type",   "one-time"          }
             }
                 };
             }
@@ -91,7 +92,7 @@ namespace Server.Controllers
                         ProductData = new SessionLineItemPriceDataProductDataOptions
                         {
                             Name        = GetPlanName(request.ServiceType),
-                            Description = GetPlanDescription(request.ServiceType),
+                            Description = GetPlanDescription(request.ServiceType, request.Amount, request.Mode),
                             Images      = new List<string> { GetPlanImage(request.ServiceType) }
                         }
                     },
@@ -104,7 +105,8 @@ namespace Server.Controllers
             {
                 { "userId",      userId              },
                 { "serviceType", request.ServiceType },
-                { "planMode",    "subscription"      }
+                { "planMode",    "subscription"      },
+                { "plan_type",   "subscription"      }
             }
                 };
             }
@@ -124,14 +126,13 @@ namespace Server.Controllers
                 _ => serviceType
             };
 
-        private static string GetPlanDescription(string serviceType) =>
-            serviceType.ToLower() switch
-            {
-                "starter" => "One-time payment · Up to 5 projects · Basic dashboard · Email support · 10GB storage · Monthly reports",
-                "professional" => "Monthly subscription · Unlimited projects · Advanced analytics · 24/7 priority support · 100GB storage · Up to 15 users · Custom reports",
-                "enterprise" => "Monthly subscription · Everything in Professional · Full API access · Unlimited users · Unlimited storage · Dedicated support · Automatic backups · Custom integrations",
-                _ => "Abbsium service plan"
-            };
+        private static string GetPlanDescription(string serviceType, decimal amount, string mode)
+        {
+            var name = GetPlanName(serviceType);
+            var formatted = amount.ToString("F2");
+            var prefix = mode == "subscription" ? $"${formatted}/mo · Monthly subscription" : $"${formatted} · One-time payment";
+            return $"{prefix} · {name}";
+        }
 
         private static string GetPlanImage(string serviceType) =>
             serviceType.ToLower() switch

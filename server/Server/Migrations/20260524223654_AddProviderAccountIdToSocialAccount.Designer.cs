@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Server.Data;
 
@@ -10,9 +11,10 @@ using Server.Data;
 namespace Server.Migrations
 {
     [DbContext(typeof(DbContext_app))]
-    partial class DbContext_appModelSnapshot : ModelSnapshot
+    [Migration("20260524223654_AddProviderAccountIdToSocialAccount")]
+    partial class AddProviderAccountIdToSocialAccount
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -371,23 +373,11 @@ namespace Server.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("DefaultPageId")
-                        .HasColumnType("longtext");
-
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("PageAccessTokens")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("PageIds")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("PageNames")
-                        .HasColumnType("longtext");
 
                     b.Property<string>("Provider")
                         .IsRequired()
