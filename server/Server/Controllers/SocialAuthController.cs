@@ -85,11 +85,10 @@ namespace Server.Controllers
             try
             {
                 var tokenResponse = await ExchangeFacebookCode(code);
-                var fbProfileId = await GetFacebookProfileId(tokenResponse.AccessToken);
                 var pages = await GetFacebookPages(tokenResponse.AccessToken);
 
-                var pageTokenDict = pages.ToDictionary(p => p.Id, p => p.AccessToken);
-                var pageTokenJson = System.Text.Json.JsonSerializer.Serialize(pageTokenDict);
+                var pageId = pages.Count > 0 ? pages[0].Id : null;
+                var pageName = pages.Count > 0 ? pages[0].Name : "Facebook Page";
 
                 var existingAccount = await _db.SocialAccounts
                     .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "facebook");
@@ -101,11 +100,8 @@ namespace Server.Controllers
                     existingAccount.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
                     existingAccount.Scope = "public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement";
                     existingAccount.IsActive = true;
-                    existingAccount.ProviderAccountId = fbProfileId;
-                    existingAccount.DefaultPageId = pages.Count > 0 ? pages[0].Id : null;
-                    existingAccount.PageIds = System.Text.Json.JsonSerializer.Serialize(pages.Select(p => p.Id));
-                    existingAccount.PageNames = System.Text.Json.JsonSerializer.Serialize(pages.Select(p => p.Name));
-                    existingAccount.PageAccessTokens = pageTokenJson;
+                    existingAccount.ProviderAccountId = pageId;
+                    existingAccount.AccountName = pageName;
                 }
                 else
                 {
@@ -118,16 +114,13 @@ namespace Server.Controllers
                         ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
                         Scope = "public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement",
                         IsActive = true,
-                        ProviderAccountId = fbProfileId,
-                        DefaultPageId = pages.Count > 0 ? pages[0].Id : null,
-                        PageIds = System.Text.Json.JsonSerializer.Serialize(pages.Select(p => p.Id)),
-                        PageNames = System.Text.Json.JsonSerializer.Serialize(pages.Select(p => p.Name)),
-                        PageAccessTokens = pageTokenJson
+                        ProviderAccountId = pageId,
+                        AccountName = pageName
                     });
                 }
 
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Facebook account saved for user {UserId} with {PageCount} pages", userId, pages.Count);
+                _logger.LogInformation("Facebook account saved for user {UserId} with page {PageName}", userId, pageName);
 
                 return Redirect($"{callbackUrl}?status=success&provider=facebook");
             }
@@ -379,6 +372,315 @@ namespace Server.Controllers
             return (accessToken, refreshToken, expiresIn, userId);
         }
 
+        // ================= YOUTUBE =================
+        [Authorize]
+        [HttpPost("youtube/connect")]
+        public IActionResult ConnectYouTube()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var state = GenerateStateToken(userId);
+            var redirectUri = _config["YouTube:RedirectUri"];
+
+            var url =
+                "https://accounts.google.com/o/oauth2/v2/auth" +
+                $"?client_id={_config["YouTube:ClientId"]}" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
+                $"&state={state}" +
+                $"&scope=https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.force-ssl" +
+                $"&response_type=code" +
+                $"&access_type=offline" +
+                $"&prompt=consent";
+
+            _logger.LogInformation("YouTube connect initiated for user {UserId}", userId);
+            return Ok(new { url });
+        }
+
+        [HttpGet("youtube/callback")]
+        public async Task<IActionResult> YouTubeCallback()
+        {
+            var code = Request.Query["code"].ToString();
+            var state = Request.Query["state"].ToString();
+            var error = Request.Query["error"].ToString();
+
+            var clientUrl = _config["ClientUrl"] ?? "http://localhost:3000";
+            var callbackUrl = $"{clientUrl}/auth/social-callback";
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                return Redirect($"{callbackUrl}?status=error&provider=youtube&error={Uri.EscapeDataString(error)}");
+            }
+
+            if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(state))
+            {
+                return Redirect($"{callbackUrl}?status=error&provider=youtube&error=missing_params");
+            }
+
+            var userId = ValidateStateToken(state);
+            if (userId == null)
+            {
+                return Redirect($"{callbackUrl}?status=error&provider=youtube&error=invalid_state");
+            }
+
+            try
+            {
+                var tokenResponse = await ExchangeYouTubeCode(code);
+                var (channelId, channelName) = await GetYouTubeChannelInfo(tokenResponse.AccessToken);
+
+                var existingAccount = await _db.SocialAccounts
+                    .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "youtube");
+
+                if (existingAccount != null)
+                {
+                    existingAccount.AccessToken = tokenResponse.AccessToken;
+                    existingAccount.RefreshToken = tokenResponse.RefreshToken ?? string.Empty;
+                    existingAccount.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
+                    existingAccount.Scope = "youtube.upload,youtube.force-ssl";
+                    existingAccount.IsActive = true;
+                    existingAccount.ProviderAccountId = channelId;
+                    existingAccount.AccountName = channelName;
+                }
+                else
+                {
+                    _db.SocialAccounts.Add(new SocialAccount
+                    {
+                        UserId = userId,
+                        Provider = "youtube",
+                        AccessToken = tokenResponse.AccessToken,
+                        RefreshToken = tokenResponse.RefreshToken ?? string.Empty,
+                        ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
+                        Scope = "youtube.upload,youtube.force-ssl",
+                        IsActive = true,
+                        ProviderAccountId = channelId,
+                        AccountName = channelName
+                    });
+                }
+
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("YouTube account saved for user {UserId}", userId);
+
+                return Redirect($"{callbackUrl}?status=success&provider=youtube");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error connecting YouTube account for user {UserId}", userId);
+                return Redirect($"{callbackUrl}?status=error&provider=youtube&error={Uri.EscapeDataString(ex.Message)}");
+            }
+        }
+
+        private async Task<(string AccessToken, string? RefreshToken, int ExpiresIn)> ExchangeYouTubeCode(string code)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = "https://oauth2.googleapis.com/token";
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("client_id", _config["YouTube:ClientId"]),
+                new KeyValuePair<string, string>("client_secret", _config["YouTube:ClientSecret"]),
+                new KeyValuePair<string, string>("grant_type", "authorization_code"),
+                new KeyValuePair<string, string>("redirect_uri", _config["YouTube:RedirectUri"]),
+                new KeyValuePair<string, string>("code", code)
+            });
+
+            var response = await client.PostAsync(url, content);
+            response.EnsureSuccessStatusCode();
+
+            var jsonString = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(jsonString);
+            var root = doc.RootElement;
+
+            var accessToken = root.TryGetProperty("access_token", out var atElem)
+                ? atElem.GetString() ?? throw new Exception("Missing access_token")
+                : throw new Exception($"YouTube token response missing access_token: {jsonString}");
+
+            var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 3600;
+            var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+
+            return (accessToken, refreshToken, expiresIn);
+        }
+
+        private async Task<(string ChannelId, string ChannelName)> GetYouTubeChannelInfo(string accessToken)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = "https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true";
+
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            var response = await client.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var jsonString = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(jsonString);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("items", out var items) && items.GetArrayLength() > 0)
+            {
+                var firstItem = items[0];
+                var channelId = firstItem.TryGetProperty("id", out var idElem)
+                    ? idElem.GetString() ?? throw new Exception("Missing YouTube channel id")
+                    : throw new Exception("YouTube channel id not found");
+
+                var channelName = "YouTube Channel";
+                if (firstItem.TryGetProperty("snippet", out var snippet) &&
+                    snippet.TryGetProperty("title", out var titleElem))
+                {
+                    channelName = titleElem.GetString() ?? "YouTube Channel";
+                }
+
+                return (channelId, channelName);
+            }
+
+            throw new Exception("No YouTube channel found");
+        }
+
+        // ================= TIKTOK =================
+        [Authorize]
+        [HttpPost("tiktok/connect")]
+        public IActionResult ConnectTikTok()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var state = GenerateStateToken(userId);
+
+            var url =
+                "https://www.tiktok.com/v2/auth/authorize/" +
+                $"?client_key={_config["TikTok:ClientId"]}" +
+                $"&redirect_uri={Uri.EscapeDataString(_config["TikTok:RedirectUri"])}" +
+                $"&state={state}" +
+                $"&scope=user.info.basic,video.upload" +
+                $"&response_type=code";
+
+            _logger.LogInformation("TikTok connect initiated for user {UserId}", userId);
+            return Ok(new { url });
+        }
+
+        [HttpGet("tiktok/callback")]
+        public async Task<IActionResult> TikTokCallback()
+        {
+            var code = Request.Query["code"].ToString();
+            var state = Request.Query["state"].ToString();
+            var error = Request.Query["error"].ToString();
+
+            var clientUrl = _config["ClientUrl"] ?? "http://localhost:3000";
+            var callbackUrl = $"{clientUrl}/auth/social-callback";
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                return Redirect($"{callbackUrl}?status=error&provider=tiktok&error={Uri.EscapeDataString(error)}");
+            }
+
+            if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(state))
+            {
+                return Redirect($"{callbackUrl}?status=error&provider=tiktok&error=missing_params");
+            }
+
+            var userId = ValidateStateToken(state);
+            if (userId == null)
+            {
+                return Redirect($"{callbackUrl}?status=error&provider=tiktok&error=invalid_state");
+            }
+
+            try
+            {
+                var tokenResponse = await ExchangeTikTokCode(code);
+                var openId = await GetTikTokOpenId(tokenResponse.AccessToken);
+
+                var existingAccount = await _db.SocialAccounts
+                    .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "tiktok");
+
+                if (existingAccount != null)
+                {
+                    existingAccount.AccessToken = tokenResponse.AccessToken;
+                    existingAccount.RefreshToken = tokenResponse.RefreshToken ?? string.Empty;
+                    existingAccount.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
+                    existingAccount.Scope = "user.info.basic,video.upload";
+                    existingAccount.IsActive = true;
+                    existingAccount.ProviderAccountId = openId;
+                }
+                else
+                {
+                    _db.SocialAccounts.Add(new SocialAccount
+                    {
+                        UserId = userId,
+                        Provider = "tiktok",
+                        AccessToken = tokenResponse.AccessToken,
+                        RefreshToken = tokenResponse.RefreshToken ?? string.Empty,
+                        ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
+                        Scope = "user.info.basic,video.upload",
+                        IsActive = true,
+                        ProviderAccountId = openId
+                    });
+                }
+
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("TikTok account saved for user {UserId}", userId);
+
+                return Redirect($"{callbackUrl}?status=success&provider=tiktok");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error connecting TikTok account for user {UserId}", userId);
+                return Redirect($"{callbackUrl}?status=error&provider=tiktok&error={Uri.EscapeDataString(ex.Message)}");
+            }
+        }
+
+        private async Task<(string AccessToken, string? RefreshToken, int ExpiresIn)> ExchangeTikTokCode(string code)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = "https://open.tiktokapis.com/v2/oauth/token/";
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("client_key", _config["TikTok:ClientId"]),
+                new KeyValuePair<string, string>("client_secret", _config["TikTok:ClientSecret"]),
+                new KeyValuePair<string, string>("grant_type", "authorization_code"),
+                new KeyValuePair<string, string>("redirect_uri", _config["TikTok:RedirectUri"]),
+                new KeyValuePair<string, string>("code", code)
+            });
+
+            var response = await client.PostAsync(url, content);
+            response.EnsureSuccessStatusCode();
+
+            var jsonString = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(jsonString);
+            var root = doc.RootElement;
+
+            var accessToken = root.TryGetProperty("access_token", out var atElem)
+                ? atElem.GetString() ?? throw new Exception("Missing access_token")
+                : throw new Exception($"TikTok token response missing access_token: {jsonString}");
+
+            var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
+            var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+
+            return (accessToken, refreshToken, expiresIn);
+        }
+
+        private async Task<string> GetTikTokOpenId(string accessToken)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = "https://open.tiktokapis.com/v2/user/info/?fields=open_id";
+
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            var response = await client.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var jsonString = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(jsonString);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("data", out var data) && data.TryGetProperty("open_id", out var openIdElem))
+            {
+                return openIdElem.GetString() ?? throw new Exception("Missing TikTok open_id");
+            }
+
+            throw new Exception("No TikTok open_id found");
+        }
+
         // ================= STATUS =================
         [Authorize]
         [HttpGet("status")]
@@ -392,49 +694,20 @@ namespace Server.Controllers
                 .Where(x => x.UserId == userId && x.IsActive)
                 .ToList();
 
-            var result = accounts.Select(x =>
+            var result = accounts.Select(x => new SocialAccountDTO
             {
-                var pages = ParsePages(x.PageIds, x.PageNames);
-                return new SocialAccountDTO
-                {
-                    Id = x.Id,
-                    Provider = x.Provider,
-                    Connected = true,
-                    IsActive = x.IsActive,
-                    ExpiresAt = x.ExpiresAt,
-                    CreatedAt = x.CreatedAt,
-                    ProviderAccountId = x.ProviderAccountId,
-                    Scope = x.Scope,
-                    Pages = pages,
-                    DefaultPageId = x.DefaultPageId
-                };
+                Id = x.Id,
+                Provider = x.Provider,
+                Connected = true,
+                IsActive = x.IsActive,
+                ExpiresAt = x.ExpiresAt,
+                CreatedAt = x.CreatedAt,
+                ProviderAccountId = x.ProviderAccountId,
+                Scope = x.Scope,
+                AccountName = x.AccountName
             }).ToList();
 
             return Ok(result);
-        }
-
-        private List<SocialPageDTO> ParsePages(string? pageIdsJson, string? pageNamesJson)
-        {
-            var pages = new List<SocialPageDTO>();
-            if (string.IsNullOrEmpty(pageIdsJson) || string.IsNullOrEmpty(pageNamesJson))
-                return pages;
-
-            try
-            {
-                var ids = System.Text.Json.JsonSerializer.Deserialize<List<string>>(pageIdsJson);
-                var names = System.Text.Json.JsonSerializer.Deserialize<List<string>>(pageNamesJson);
-
-                if (ids != null && names != null)
-                {
-                    for (int i = 0; i < ids.Count && i < names.Count; i++)
-                    {
-                        pages.Add(new SocialPageDTO { Id = ids[i], Name = names[i] });
-                    }
-                }
-            }
-            catch { }
-
-            return pages;
         }
 
         // ================= DISCONNECT =================
@@ -478,16 +751,16 @@ namespace Server.Controllers
             {
                 var pages = await GetFacebookPages(acc.AccessToken);
                 
-                acc.DefaultPageId = pages.Count > 0 ? pages[0].Id : null;
-                acc.PageIds = System.Text.Json.JsonSerializer.Serialize(pages.Select(p => p.Id));
-                acc.PageNames = System.Text.Json.JsonSerializer.Serialize(pages.Select(p => p.Name));
-                var pageTokenDict = pages.ToDictionary(p => p.Id, p => p.AccessToken);
-                acc.PageAccessTokens = System.Text.Json.JsonSerializer.Serialize(pageTokenDict);
+                var pageId = pages.Count > 0 ? pages[0].Id : null;
+                var pageName = pages.Count > 0 ? pages[0].Name : "Facebook Page";
+                
+                acc.ProviderAccountId = pageId;
+                acc.AccountName = pageName;
                 await _db.SaveChangesAsync();
 
                 return Ok(new { 
-                    pages = pages.Select(p => new { id = p.Id, name = p.Name }),
-                    defaultPageId = acc.DefaultPageId
+                    id = pageId,
+                    name = pageName
                 });
             }
             catch (Exception ex)
@@ -523,6 +796,20 @@ namespace Server.Controllers
                 else if (provider.ToLower() == "instagram" && !string.IsNullOrEmpty(acc.RefreshToken))
                 {
                     var newToken = await RefreshInstagramToken(acc.RefreshToken);
+                    acc.AccessToken = newToken.AccessToken;
+                    acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
+                    acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                }
+                else if (provider.ToLower() == "youtube" && !string.IsNullOrEmpty(acc.RefreshToken))
+                {
+                    var newToken = await RefreshYouTubeToken(acc.RefreshToken);
+                    acc.AccessToken = newToken.AccessToken;
+                    acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
+                    acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                }
+                else if (provider.ToLower() == "tiktok" && !string.IsNullOrEmpty(acc.RefreshToken))
+                {
+                    var newToken = await RefreshTikTokToken(acc.RefreshToken);
                     acc.AccessToken = newToken.AccessToken;
                     acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
@@ -604,6 +891,70 @@ namespace Server.Controllers
             );
         }
 
+        private async Task<(string AccessToken, string? RefreshToken, int ExpiresIn)> RefreshYouTubeToken(string refreshToken)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = "https://oauth2.googleapis.com/token";
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("client_id", _config["YouTube:ClientId"]),
+                new KeyValuePair<string, string>("client_secret", _config["YouTube:ClientSecret"]),
+                new KeyValuePair<string, string>("grant_type", "refresh_token"),
+                new KeyValuePair<string, string>("refresh_token", refreshToken)
+            });
+
+            var response = await client.PostAsync(url, content);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("access_token", out var atElem))
+            {
+                _logger.LogError("YouTube token refresh response missing access_token: {Response}", json);
+                throw new Exception($"YouTube token refresh failed: {json}");
+            }
+
+            return (
+                atElem.GetString() ?? throw new Exception("Missing access_token"),
+                root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null,
+                root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 3600
+            );
+        }
+
+        private async Task<(string AccessToken, string? RefreshToken, int ExpiresIn)> RefreshTikTokToken(string refreshToken)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = "https://open.tiktokapis.com/v2/oauth/token/";
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("client_key", _config["TikTok:ClientId"]),
+                new KeyValuePair<string, string>("client_secret", _config["TikTok:ClientSecret"]),
+                new KeyValuePair<string, string>("grant_type", "refresh_token"),
+                new KeyValuePair<string, string>("refresh_token", refreshToken)
+            });
+
+            var response = await client.PostAsync(url, content);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("access_token", out var atElem))
+            {
+                _logger.LogError("TikTok token refresh response missing access_token: {Response}", json);
+                throw new Exception($"TikTok token refresh failed: {json}");
+            }
+
+            return (
+                atElem.GetString() ?? throw new Exception("Missing access_token"),
+                root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null,
+                root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400
+            );
+        }
+
         // ================= CONNECTIONS CHECK =================
         [Authorize]
         [HttpGet("connections/check")]
@@ -622,6 +973,7 @@ namespace Server.Controllers
             foreach (var acc in accounts)
             {
                 bool isValid = false;
+                bool wasRefreshed = false;
 
                 if (acc.Provider == "facebook")
                 {
@@ -630,12 +982,63 @@ namespace Server.Controllers
                 else if (acc.Provider == "instagram")
                 {
                     isValid = await IsInstagramTokenValid(acc.AccessToken);
+                    if (!isValid && !string.IsNullOrEmpty(acc.RefreshToken))
+                    {
+                        try
+                        {
+                            var newToken = await RefreshInstagramToken(acc.RefreshToken);
+                            acc.AccessToken = newToken.AccessToken;
+                            acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
+                            acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                            isValid = true;
+                            wasRefreshed = true;
+                        }
+                        catch { }
+                    }
+                }
+                else if (acc.Provider == "youtube")
+                {
+                    isValid = await IsYouTubeTokenValid(acc.AccessToken);
+                    if (!isValid && !string.IsNullOrEmpty(acc.RefreshToken))
+                    {
+                        try
+                        {
+                            var newToken = await RefreshYouTubeToken(acc.RefreshToken);
+                            acc.AccessToken = newToken.AccessToken;
+                            acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
+                            acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                            isValid = true;
+                            wasRefreshed = true;
+                        }
+                        catch { }
+                    }
+                }
+                else if (acc.Provider == "tiktok")
+                {
+                    isValid = await IsTikTokTokenValid(acc.AccessToken);
+                    if (!isValid && !string.IsNullOrEmpty(acc.RefreshToken))
+                    {
+                        try
+                        {
+                            var newToken = await RefreshTikTokToken(acc.RefreshToken);
+                            acc.AccessToken = newToken.AccessToken;
+                            acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
+                            acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                            isValid = true;
+                            wasRefreshed = true;
+                        }
+                        catch { }
+                    }
                 }
 
                 if (!isValid)
                 {
                     _db.SocialAccounts.Remove(acc);
                     _logger.LogWarning("{Provider} token invalid for user {UserId}, account deleted", acc.Provider, userId);
+                }
+                else if (wasRefreshed)
+                {
+                    _logger.LogInformation("{Provider} token refreshed for user {UserId}", acc.Provider, userId);
                 }
 
                 result.Add(new SocialAccountDTO
@@ -648,8 +1051,7 @@ namespace Server.Controllers
                     CreatedAt = acc.CreatedAt,
                     ProviderAccountId = acc.ProviderAccountId,
                     Scope = acc.Scope,
-                    Pages = ParsePages(acc.PageIds, acc.PageNames),
-                    DefaultPageId = acc.DefaultPageId
+                    AccountName = acc.AccountName
                 });
             }
 
@@ -679,6 +1081,37 @@ namespace Server.Controllers
                 var client = _httpClientFactory.CreateClient();
                 var res = await client.GetAsync(
                     $"https://graph.instagram.com/me?access_token={accessToken}&fields=id,username");
+                return res.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task<bool> IsYouTubeTokenValid(string accessToken)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                var res = await client.GetAsync(
+                    $"https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&access_token={accessToken}");
+                return res.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task<bool> IsTikTokTokenValid(string accessToken)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                var request = new HttpRequestMessage(HttpMethod.Get, "https://open.tiktokapis.com/v2/user/info/?fields=open_id");
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                var res = await client.SendAsync(request);
                 return res.IsSuccessStatusCode;
             }
             catch
@@ -753,27 +1186,16 @@ namespace Server.Controllers
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var pageId = request.PageId ?? acc.DefaultPageId;
+                var pageId = request.PageId ?? acc.ProviderAccountId;
                 
                 var fbUrl = string.IsNullOrEmpty(pageId)
                     ? "https://graph.facebook.com/me/feed"
                     : $"https://graph.facebook.com/{pageId}/feed";
 
-                var postToken = acc.AccessToken;
-                if (!string.IsNullOrEmpty(pageId) && !string.IsNullOrEmpty(acc.PageAccessTokens))
-                {
-                    var tokenDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(acc.PageAccessTokens);
-                    if (tokenDict != null && tokenDict.TryGetValue(pageId, out var pageToken))
-                    {
-                        postToken = pageToken;
-                        _logger.LogInformation("Using page access token for page {PageId}", pageId);
-                    }
-                }
-
                 var content = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
                     ["message"] = request.Message ?? "",
-                    ["access_token"] = postToken
+                    ["access_token"] = acc.AccessToken
                 });
 
                 var fbResponse = await client.PostAsync(fbUrl, content);
@@ -815,20 +1237,10 @@ namespace Server.Controllers
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                var pageId = request.PageId ?? acc.DefaultPageId;
+                var pageId = request.PageId ?? acc.ProviderAccountId;
                 var fbUrl = string.IsNullOrEmpty(pageId)
                     ? "https://graph.facebook.com/me/photos"
                     : $"https://graph.facebook.com/{pageId}/photos";
-
-                var postToken = acc.AccessToken;
-                if (!string.IsNullOrEmpty(pageId) && !string.IsNullOrEmpty(acc.PageAccessTokens))
-                {
-                    var tokenDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(acc.PageAccessTokens);
-                    if (tokenDict != null && tokenDict.TryGetValue(pageId, out var pageToken))
-                    {
-                        postToken = pageToken;
-                    }
-                }
 
                 var content = new MultipartFormDataContent();
 
@@ -851,7 +1263,7 @@ namespace Server.Controllers
 
                 content.Add(new ByteArrayContent(bytes), "source", "photo.jpg");
                 content.Add(new StringContent(request.Message ?? ""), "message");
-                content.Add(new StringContent(postToken), "access_token");
+                content.Add(new StringContent(acc.AccessToken), "access_token");
 
                 var fbResponse = await client.PostAsync(fbUrl, content);
                 var responseString = await fbResponse.Content.ReadAsStringAsync();

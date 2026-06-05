@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Server.Data;
 
@@ -10,9 +11,10 @@ using Server.Data;
 namespace Server.Migrations
 {
     [DbContext(typeof(DbContext_app))]
-    partial class DbContext_appModelSnapshot : ModelSnapshot
+    [Migration("20260603171639_SimplifySocialAccount")]
+    partial class SimplifySocialAccount
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -248,7 +250,7 @@ namespace Server.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Conversations", (string)null);
+                    b.ToTable("Conversations");
                 });
 
             modelBuilder.Entity("Server.Chat.Entitys.Message", b =>
@@ -286,7 +288,7 @@ namespace Server.Migrations
 
                     b.HasIndex("SenderId");
 
-                    b.ToTable("Messages", (string)null);
+                    b.ToTable("Messages");
                 });
 
             modelBuilder.Entity("Server.Entitys.Order", b =>
@@ -325,7 +327,7 @@ namespace Server.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Order", (string)null);
+                    b.ToTable("Order");
                 });
 
             modelBuilder.Entity("Server.Entitys.RefreshToken", b =>
@@ -355,7 +357,7 @@ namespace Server.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("RefreshTokens", (string)null);
+                    b.ToTable("RefreshTokens");
                 });
 
             modelBuilder.Entity("Server.Entitys.SocialAccount", b =>
@@ -403,7 +405,7 @@ namespace Server.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("SocialAccounts", (string)null);
+                    b.ToTable("SocialAccounts");
                 });
 
             modelBuilder.Entity("Server.Entitys.User_data", b =>
