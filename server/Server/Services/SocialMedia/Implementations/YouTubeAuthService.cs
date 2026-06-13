@@ -56,6 +56,7 @@ namespace Server.Services.SocialMedia.Implementations
                 existingAccount.IsActive = true;
                 existingAccount.ProviderAccountId = channelId;
                 existingAccount.AccountName = channelName;
+                existingAccount.LastRefreshedAt = DateTime.UtcNow;
             }
             else
             {
@@ -69,7 +70,8 @@ namespace Server.Services.SocialMedia.Implementations
                     Scope = "youtube.upload,youtube.force-ssl",
                     IsActive = true,
                     ProviderAccountId = channelId,
-                    AccountName = channelName
+                    AccountName = channelName,
+                    LastRefreshedAt = DateTime.UtcNow
                 });
             }
 
@@ -87,6 +89,7 @@ namespace Server.Services.SocialMedia.Implementations
             acc.AccessToken = newToken.AccessToken;
             acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
             acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+            acc.LastRefreshedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
@@ -110,6 +113,7 @@ namespace Server.Services.SocialMedia.Implementations
                     acc.AccessToken = newToken.AccessToken;
                     acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    acc.LastRefreshedAt = DateTime.UtcNow;
                     await _db.SaveChangesAsync();
                     return true;
                 }

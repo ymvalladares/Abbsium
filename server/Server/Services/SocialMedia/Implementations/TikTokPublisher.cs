@@ -7,6 +7,7 @@ using Server.Models.SocialMedia.Requests;
 using Server.Models.SocialMedia.Responses;
 using Server.Services.SocialMedia.Base;
 using Server.Services.SocialMedia.Interfaces;
+using Server.Services;
 using System.Text.Json;
 
 namespace Server.Services.SocialMedia.Implementations
@@ -62,6 +63,8 @@ namespace Server.Services.SocialMedia.Implementations
                     ? ExtractBase64Media(request.VideoUrl)
                     : await DownloadMediaAsync(request.VideoUrl);
 
+                _logger.LogInformation("Uploading video to TikTok: {Size} bytes", videoBytes.Length);
+
                 var publishId = await UploadAndPublishVideo(
                     acc.AccessToken,
                     videoBytes,
@@ -69,7 +72,7 @@ namespace Server.Services.SocialMedia.Implementations
 
                 if (string.IsNullOrEmpty(publishId))
                 {
-                    result.ErrorMessage = "Failed to upload video to TikTok";
+                    result.ErrorMessage = "Error uploading the video to TikTok. Please ensure it is MP4 with a duration between 3 and 10 minutes.";
                     return result;
                 }
 
@@ -88,7 +91,7 @@ namespace Server.Services.SocialMedia.Implementations
 
         private async Task<string?> UploadAndPublishVideo(string accessToken, byte[] videoBytes, string description)
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient("SocialMedia");
 
             var sessionId = await InitiateUpload(accessToken, videoBytes.Length, description);
             if (string.IsNullOrEmpty(sessionId))
@@ -110,7 +113,7 @@ namespace Server.Services.SocialMedia.Implementations
 
         private async Task<string?> InitiateUpload(string accessToken, long videoSize, string description)
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient("SocialMedia");
             var url = "https://open.tiktokapis.com/v2/post/publish/content/init/";
 
             var body = new
@@ -163,7 +166,7 @@ namespace Server.Services.SocialMedia.Implementations
 
         private async Task<bool> UploadVideoChunks(string accessToken, string publishId, byte[] videoBytes)
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient("SocialMedia");
             var url = $"https://open.tiktokapis.com/v2/post/publish/content/upload/?publish_id={publishId}";
 
             var request = new HttpRequestMessage(HttpMethod.Put, url)
@@ -179,7 +182,7 @@ namespace Server.Services.SocialMedia.Implementations
 
         private async Task<string?> PublishVideo(string accessToken, string publishId, string description)
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient("SocialMedia");
             var url = "https://open.tiktokapis.com/v2/post/publish/content/fetch/";
 
             var body = new { publish_id = publishId };

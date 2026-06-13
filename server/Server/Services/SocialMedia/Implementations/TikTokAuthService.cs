@@ -54,6 +54,7 @@ namespace Server.Services.SocialMedia.Implementations
                 existingAccount.IsActive = true;
                 existingAccount.ProviderAccountId = openId;
                 existingAccount.AccountName = displayName;
+                existingAccount.LastRefreshedAt = DateTime.UtcNow;
             }
             else
             {
@@ -67,7 +68,8 @@ namespace Server.Services.SocialMedia.Implementations
                     Scope = "user.info.basic,video.upload,video.publish",
                     IsActive = true,
                     ProviderAccountId = openId,
-                    AccountName = displayName
+                    AccountName = displayName,
+                    LastRefreshedAt = DateTime.UtcNow
                 });
             }
 
@@ -85,6 +87,7 @@ namespace Server.Services.SocialMedia.Implementations
             acc.AccessToken = newToken.AccessToken;
             acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
             acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+            acc.LastRefreshedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
@@ -111,6 +114,7 @@ namespace Server.Services.SocialMedia.Implementations
                     acc.AccessToken = newToken.AccessToken;
                     acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    acc.LastRefreshedAt = DateTime.UtcNow;
                     await _db.SaveChangesAsync();
                     return true;
                 }

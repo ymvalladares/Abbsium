@@ -8,6 +8,7 @@
     ".NETCoreApp,Version=v6.0": {
       "Server/1.0.0": {
         "dependencies": {
+          "AWSSDK.S3": "3.7.300.1",
           "AutoMapper": "8.1.1",
           "AutoMapper.Extensions.Microsoft.DependencyInjection": "6.1.1",
           "Google.Apis.Auth": "1.70.0",
@@ -50,6 +51,25 @@
           "lib/netstandard2.0/AutoMapper.Extensions.Microsoft.DependencyInjection.dll": {
             "assemblyVersion": "0.0.0.0",
             "fileVersion": "6.1.1.0"
+          }
+        }
+      },
+      "AWSSDK.Core/3.7.300.1": {
+        "runtime": {
+          "lib/netcoreapp3.1/AWSSDK.Core.dll": {
+            "assemblyVersion": "3.3.0.0",
+            "fileVersion": "3.7.300.1"
+          }
+        }
+      },
+      "AWSSDK.S3/3.7.300.1": {
+        "dependencies": {
+          "AWSSDK.Core": "3.7.300.1"
+        },
+        "runtime": {
+          "lib/netcoreapp3.1/AWSSDK.S3.dll": {
+            "assemblyVersion": "3.3.0.0",
+            "fileVersion": "3.7.300.1"
           }
         }
       },
@@ -943,6 +963,20 @@
       "sha512": "sha512-MPMgL6JGEH2Egmgh3+tw2UVX05ph8As7YtYWzt2ZDCc0STHGG5EsV3UMWH/g4aHaN1q20Bbc0PTMy3I0PwgBGQ==",
       "path": "automapper.extensions.microsoft.dependencyinjection/6.1.1",
       "hashPath": "automapper.extensions.microsoft.dependencyinjection.6.1.1.nupkg.sha512"
+    },
+    "AWSSDK.Core/3.7.300.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-bzm8H4hJNVTOzSo3Kpy3DqyCnVQRFklAxz+CSvyPLMQdqmS0bsyPogqtHnJNQC3ccqYj0to7axqarWn+Me62tg==",
+      "path": "awssdk.core/3.7.300.1",
+      "hashPath": "awssdk.core.3.7.300.1.nupkg.sha512"
+    },
+    "AWSSDK.S3/3.7.300.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Z9nsS9hCjhlNteulMAO98COr4/DyhR4nqal/GBTgdVIsRtcdAFWNgxr0Fum9D3Jq+G4p0GLIoKWVravD01SV0g==",
+      "path": "awssdk.s3/3.7.300.1",
+      "hashPath": "awssdk.s3.3.7.300.1.nupkg.sha512"
     },
     "BouncyCastle.Cryptography/2.6.2": {
       "type": "package",

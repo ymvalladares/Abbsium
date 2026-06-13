@@ -23,6 +23,7 @@ namespace Server.Entitys
 
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? LastRefreshedAt { get; set; }
         
         public string? ProviderAccountId { get; set; } // ID de la cuenta/canal/página
         

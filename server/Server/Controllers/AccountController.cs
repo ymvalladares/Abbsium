@@ -46,7 +46,7 @@ namespace Server.Controllers
 
 
         [HttpPost("register")]
-        public async Task<ActionResult<AuthResponseDTO>> Register(RegisterDTO model)
+        public async Task<ActionResult<AuthResponseDTO>> Register([FromBody] RegisterDTO model)
         {
             // 1) Verificar email duplicado
             if (await _userManager.FindByEmailAsync(model.Email) is not null)
@@ -120,7 +120,7 @@ namespace Server.Controllers
 
 
         [HttpPost("login")]
-        public async Task<ActionResult<TokenResponseDTO>> Login(LoginDTO model)
+        public async Task<ActionResult<TokenResponseDTO>> Login([FromBody] LoginDTO model)
         {
             var user = await _userManager.FindByEmailAsync(model.Email);
 
@@ -261,7 +261,7 @@ namespace Server.Controllers
 
 
         [HttpPost("refresh-token")]
-        public async Task<IActionResult> Refresh(RefreshRequestDto request)
+        public async Task<IActionResult> Refresh([FromBody] RefreshRequestDto request)
         {
             if (string.IsNullOrWhiteSpace(request.RefreshToken))
                 return BadRequest(new { success = false, message = "Refresh token is required." });
@@ -325,7 +325,7 @@ namespace Server.Controllers
 
 
         [HttpPost("reset-password")]
-        public async Task<ActionResult<AuthResponseDTO>> ResetPassword(ResetPasswordDTO model)
+        public async Task<ActionResult<AuthResponseDTO>> ResetPassword([FromBody] ResetPasswordDTO model)
         {
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
@@ -345,7 +345,7 @@ namespace Server.Controllers
         }
 
         [HttpPost("forgetPassword")]
-        public async Task<ActionResult<AuthResponseDTO>> ForgotPassword(ForgotPasswordDTO model)
+        public async Task<ActionResult<AuthResponseDTO>> ForgotPassword([FromBody] ForgotPasswordDTO model)
         {
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)

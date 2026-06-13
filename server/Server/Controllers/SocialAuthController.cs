@@ -9,7 +9,6 @@ using System.Text.Json;
 
 namespace Server.Controllers
 {
-    [ApiController]
     public class SocialAuthController : Base_Control_Api
     {
         private readonly DbContext_app _db;
@@ -87,21 +86,28 @@ namespace Server.Controllers
                 var tokenResponse = await ExchangeFacebookCode(code);
                 var pages = await GetFacebookPages(tokenResponse.AccessToken);
 
-                var pageId = pages.Count > 0 ? pages[0].Id : null;
-                var pageName = pages.Count > 0 ? pages[0].Name : "Facebook Page";
+                if (pages.Count == 0)
+                {
+                    return Redirect($"{callbackUrl}?status=error&provider=facebook&error=no_pages");
+                }
+
+                var pageId = pages[0].Id;
+                var pageName = pages[0].Name;
+                var pageToken = pages[0].AccessToken;
 
                 var existingAccount = await _db.SocialAccounts
                     .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "facebook");
 
                 if (existingAccount != null)
                 {
-                    existingAccount.AccessToken = tokenResponse.AccessToken;
+                    existingAccount.AccessToken = pageToken;
                     existingAccount.RefreshToken = tokenResponse.LongLivedAccessToken ?? string.Empty;
                     existingAccount.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
                     existingAccount.Scope = "public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement";
                     existingAccount.IsActive = true;
                     existingAccount.ProviderAccountId = pageId;
                     existingAccount.AccountName = pageName;
+                    existingAccount.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else
                 {
@@ -109,13 +115,14 @@ namespace Server.Controllers
                     {
                         UserId = userId,
                         Provider = "facebook",
-                        AccessToken = tokenResponse.AccessToken,
+                        AccessToken = pageToken,
                         RefreshToken = tokenResponse.LongLivedAccessToken ?? string.Empty,
                         ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
                         Scope = "public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement",
                         IsActive = true,
                         ProviderAccountId = pageId,
-                        AccountName = pageName
+                        AccountName = pageName,
+                        LastRefreshedAt = DateTime.UtcNow
                     });
                 }
 
@@ -311,6 +318,7 @@ namespace Server.Controllers
                     existingAccount.Scope = "user_profile,user_media";
                     existingAccount.IsActive = true;
                     existingAccount.ProviderAccountId = tokenResponse.UserId;
+                    existingAccount.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else
                 {
@@ -323,7 +331,8 @@ namespace Server.Controllers
                         ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
                         Scope = "user_profile,user_media",
                         IsActive = true,
-                        ProviderAccountId = tokenResponse.UserId
+                        ProviderAccountId = tokenResponse.UserId,
+                        LastRefreshedAt = DateTime.UtcNow
                     });
                 }
 
@@ -441,6 +450,7 @@ namespace Server.Controllers
                     existingAccount.IsActive = true;
                     existingAccount.ProviderAccountId = channelId;
                     existingAccount.AccountName = channelName;
+                    existingAccount.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else
                 {
@@ -454,7 +464,8 @@ namespace Server.Controllers
                         Scope = "youtube.upload,youtube.force-ssl",
                         IsActive = true,
                         ProviderAccountId = channelId,
-                        AccountName = channelName
+                        AccountName = channelName,
+                        LastRefreshedAt = DateTime.UtcNow
                     });
                 }
 
@@ -600,6 +611,7 @@ namespace Server.Controllers
                     existingAccount.Scope = "user.info.basic,video.upload";
                     existingAccount.IsActive = true;
                     existingAccount.ProviderAccountId = openId;
+                    existingAccount.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else
                 {
@@ -612,7 +624,8 @@ namespace Server.Controllers
                         ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
                         Scope = "user.info.basic,video.upload",
                         IsActive = true,
-                        ProviderAccountId = openId
+                        ProviderAccountId = openId,
+                        LastRefreshedAt = DateTime.UtcNow
                     });
                 }
 
@@ -792,6 +805,7 @@ namespace Server.Controllers
                     var newToken = await RefreshFacebookToken(acc.AccessToken);
                     acc.AccessToken = newToken.AccessToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    acc.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else if (provider.ToLower() == "instagram" && !string.IsNullOrEmpty(acc.RefreshToken))
                 {
@@ -799,6 +813,7 @@ namespace Server.Controllers
                     acc.AccessToken = newToken.AccessToken;
                     acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    acc.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else if (provider.ToLower() == "youtube" && !string.IsNullOrEmpty(acc.RefreshToken))
                 {
@@ -806,6 +821,7 @@ namespace Server.Controllers
                     acc.AccessToken = newToken.AccessToken;
                     acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    acc.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else if (provider.ToLower() == "tiktok" && !string.IsNullOrEmpty(acc.RefreshToken))
                 {
@@ -813,6 +829,7 @@ namespace Server.Controllers
                     acc.AccessToken = newToken.AccessToken;
                     acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    acc.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else
                 {
@@ -990,6 +1007,7 @@ namespace Server.Controllers
                             acc.AccessToken = newToken.AccessToken;
                             acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                             acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                            acc.LastRefreshedAt = DateTime.UtcNow;
                             isValid = true;
                             wasRefreshed = true;
                         }
@@ -1007,6 +1025,7 @@ namespace Server.Controllers
                             acc.AccessToken = newToken.AccessToken;
                             acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                             acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                            acc.LastRefreshedAt = DateTime.UtcNow;
                             isValid = true;
                             wasRefreshed = true;
                         }
@@ -1024,6 +1043,7 @@ namespace Server.Controllers
                             acc.AccessToken = newToken.AccessToken;
                             acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                             acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                            acc.LastRefreshedAt = DateTime.UtcNow;
                             isValid = true;
                             wasRefreshed = true;
                         }
@@ -1033,8 +1053,8 @@ namespace Server.Controllers
 
                 if (!isValid)
                 {
-                    _db.SocialAccounts.Remove(acc);
-                    _logger.LogWarning("{Provider} token invalid for user {UserId}, account deleted", acc.Provider, userId);
+                    acc.IsActive = false;
+                    _logger.LogWarning("{Provider} token invalid for user {UserId}, account marked as inactive", acc.Provider, userId);
                 }
                 else if (wasRefreshed)
                 {
@@ -1164,11 +1184,19 @@ namespace Server.Controllers
             public string PhotoUrl { get; set; }
             public string Caption { get; set; }
             public string PageId { get; set; }
+            public string VideoUrl { get; set; }
         }
 
         [Authorize]
         [HttpPost("facebook/post")]
         public async Task<IActionResult> PostToFacebook([FromBody] FacebookPostRequest request)
+        {
+            return await PublishToFacebook(request);
+        }
+
+        [Authorize]
+        [HttpPost("facebook/publish")]
+        public async Task<IActionResult> PublishToFacebook([FromBody] FacebookPostRequest request)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId))
@@ -1180,39 +1208,29 @@ namespace Server.Controllers
             if (acc == null)
                 return BadRequest("Facebook not connected");
 
-            if (string.IsNullOrEmpty(request.Message) && string.IsNullOrEmpty(request.PhotoUrl))
-                return BadRequest("Message or PhotoUrl is required");
+            if (string.IsNullOrEmpty(request.Message) && string.IsNullOrEmpty(request.PhotoUrl) && string.IsNullOrEmpty(request.VideoUrl))
+                return BadRequest("Message, PhotoUrl or VideoUrl is required");
 
             try
             {
                 var client = _httpClientFactory.CreateClient();
                 var pageId = request.PageId ?? acc.ProviderAccountId;
-                
-                var fbUrl = string.IsNullOrEmpty(pageId)
-                    ? "https://graph.facebook.com/me/feed"
-                    : $"https://graph.facebook.com/{pageId}/feed";
 
-                var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                if (!string.IsNullOrEmpty(request.VideoUrl))
                 {
-                    ["message"] = request.Message ?? "",
-                    ["access_token"] = acc.AccessToken
-                });
-
-                var fbResponse = await client.PostAsync(fbUrl, content);
-                var responseString = await fbResponse.Content.ReadAsStringAsync();
-
-                _logger.LogInformation("Facebook post response: {StatusCode} - {Response}", fbResponse.StatusCode, responseString);
-
-                if (!fbResponse.IsSuccessStatusCode)
-                {
-                    return BadRequest(new { error = "Facebook API error", details = responseString });
+                    return await PostVideo(client, acc, request, pageId);
                 }
 
-                return Ok(new { status = "Published", response = responseString, pageId = pageId });
+                if (!string.IsNullOrEmpty(request.PhotoUrl))
+                {
+                    return await PostPhoto(client, acc, request, pageId);
+                }
+
+                return await PostText(client, acc, request, pageId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error posting to Facebook for user {UserId}", userId);
+                _logger.LogError(ex, "Error publishing to Facebook for user {UserId}", userId);
                 return StatusCode(500, new { error = "Server error", details = ex.Message });
             }
         }
@@ -1238,50 +1256,155 @@ namespace Server.Controllers
             {
                 var client = _httpClientFactory.CreateClient();
                 var pageId = request.PageId ?? acc.ProviderAccountId;
-                var fbUrl = string.IsNullOrEmpty(pageId)
-                    ? "https://graph.facebook.com/me/photos"
-                    : $"https://graph.facebook.com/{pageId}/photos";
-
-                var content = new MultipartFormDataContent();
-
-                byte[] bytes;
-                if (request.PhotoUrl.StartsWith("data:"))
-                {
-                    var base64Data = request.PhotoUrl.Substring(request.PhotoUrl.IndexOf(",") + 1);
-                    bytes = Convert.FromBase64String(base64Data);
-                }
-                else if (request.PhotoUrl.StartsWith("http"))
-                {
-                    var imageResponse = await client.GetAsync(request.PhotoUrl);
-                    imageResponse.EnsureSuccessStatusCode();
-                    bytes = await imageResponse.Content.ReadAsByteArrayAsync();
-                }
-                else
-                {
-                    return BadRequest("Invalid PhotoUrl format");
-                }
-
-                content.Add(new ByteArrayContent(bytes), "source", "photo.jpg");
-                content.Add(new StringContent(request.Message ?? ""), "message");
-                content.Add(new StringContent(acc.AccessToken), "access_token");
-
-                var fbResponse = await client.PostAsync(fbUrl, content);
-                var responseString = await fbResponse.Content.ReadAsStringAsync();
-
-                _logger.LogInformation("Facebook photo post response: {StatusCode} - {Response}", fbResponse.StatusCode, responseString);
-
-                if (!fbResponse.IsSuccessStatusCode)
-                {
-                    return BadRequest(new { error = "Facebook API error", details = responseString });
-                }
-
-                return Ok(new { status = "Photo published", response = responseString, pageId = pageId });
+                return await PostPhoto(client, acc, request, pageId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error posting photo to Facebook for user {UserId}", userId);
                 return StatusCode(500, new { error = "Server error", details = ex.Message });
             }
+        }
+
+        [Authorize]
+        [HttpPost("facebook/video")]
+        public async Task<IActionResult> PostVideoToFacebook([FromBody] FacebookPostRequest request)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var acc = await _db.SocialAccounts
+                .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "facebook" && x.IsActive);
+
+            if (acc == null)
+                return BadRequest("Facebook not connected");
+
+            if (string.IsNullOrEmpty(request.VideoUrl))
+                return BadRequest("VideoUrl is required");
+
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                var pageId = request.PageId ?? acc.ProviderAccountId;
+                return await PostVideo(client, acc, request, pageId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error posting video to Facebook for user {UserId}", userId);
+                return StatusCode(500, new { error = "Server error", details = ex.Message });
+            }
+        }
+
+        private async Task<IActionResult> PostText(HttpClient client, SocialAccount acc, FacebookPostRequest request, string pageId)
+        {
+            if (string.IsNullOrEmpty(pageId))
+                return BadRequest("Facebook Page ID is required. Connect a Facebook Page first.");
+
+            var fbUrl = $"https://graph.facebook.com/{pageId}/feed";
+
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["message"] = request.Message ?? "",
+                ["access_token"] = acc.AccessToken
+            });
+
+            var fbResponse = await client.PostAsync(fbUrl, content);
+            var responseString = await fbResponse.Content.ReadAsStringAsync();
+
+            _logger.LogInformation("Facebook post response: {StatusCode} - {Response}", fbResponse.StatusCode, responseString);
+
+            if (!fbResponse.IsSuccessStatusCode)
+            {
+                return BadRequest(new { error = "Facebook API error", details = responseString });
+            }
+
+            return Ok(new { status = "Published", response = responseString, pageId = pageId });
+        }
+
+        private async Task<IActionResult> PostPhoto(HttpClient client, SocialAccount acc, FacebookPostRequest request, string pageId)
+        {
+            if (string.IsNullOrEmpty(pageId))
+                return BadRequest("Facebook Page ID is required. Connect a Facebook Page first.");
+
+            var fbUrl = $"https://graph.facebook.com/{pageId}/photos";
+
+            var content = new MultipartFormDataContent();
+
+            byte[] bytes;
+            if (request.PhotoUrl.StartsWith("data:"))
+            {
+                var base64Data = request.PhotoUrl.Substring(request.PhotoUrl.IndexOf(",") + 1);
+                bytes = Convert.FromBase64String(base64Data);
+            }
+            else if (request.PhotoUrl.StartsWith("http"))
+            {
+                var imageResponse = await client.GetAsync(request.PhotoUrl);
+                imageResponse.EnsureSuccessStatusCode();
+                bytes = await imageResponse.Content.ReadAsByteArrayAsync();
+            }
+            else
+            {
+                return BadRequest("Invalid PhotoUrl format");
+            }
+
+            content.Add(new ByteArrayContent(bytes), "source", "photo.jpg");
+            content.Add(new StringContent(request.Message ?? ""), "message");
+            content.Add(new StringContent(acc.AccessToken), "access_token");
+
+            var fbResponse = await client.PostAsync(fbUrl, content);
+            var responseString = await fbResponse.Content.ReadAsStringAsync();
+
+            _logger.LogInformation("Facebook photo post response: {StatusCode} - {Response}", fbResponse.StatusCode, responseString);
+
+            if (!fbResponse.IsSuccessStatusCode)
+            {
+                return BadRequest(new { error = "Facebook API error", details = responseString });
+            }
+
+            return Ok(new { status = "Photo published", response = responseString, pageId = pageId });
+        }
+
+        private async Task<IActionResult> PostVideo(HttpClient client, SocialAccount acc, FacebookPostRequest request, string pageId)
+        {
+            if (string.IsNullOrEmpty(pageId))
+                return BadRequest("Facebook Page ID is required. Connect a Facebook Page first.");
+
+            var fbUrl = $"https://graph.facebook.com/{pageId}/videos";
+
+            var content = new MultipartFormDataContent();
+
+            byte[] bytes;
+            if (request.VideoUrl.StartsWith("data:"))
+            {
+                var base64Data = request.VideoUrl.Substring(request.VideoUrl.IndexOf(",") + 1);
+                bytes = Convert.FromBase64String(base64Data);
+            }
+            else if (request.VideoUrl.StartsWith("http"))
+            {
+                var videoResponse = await client.GetAsync(request.VideoUrl);
+                videoResponse.EnsureSuccessStatusCode();
+                bytes = await videoResponse.Content.ReadAsByteArrayAsync();
+            }
+            else
+            {
+                return BadRequest("Invalid VideoUrl format");
+            }
+
+            content.Add(new ByteArrayContent(bytes), "source", "video.mp4");
+            content.Add(new StringContent(request.Message ?? ""), "description");
+            content.Add(new StringContent(acc.AccessToken), "access_token");
+
+            var fbResponse = await client.PostAsync(fbUrl, content);
+            var responseString = await fbResponse.Content.ReadAsStringAsync();
+
+            _logger.LogInformation("Facebook video post response: {StatusCode} - {Response}", fbResponse.StatusCode, responseString);
+
+            if (!fbResponse.IsSuccessStatusCode)
+            {
+                return BadRequest(new { error = "Facebook API error", details = responseString });
+            }
+
+            return Ok(new { status = "Video published", response = responseString, pageId = pageId });
         }
 
         // ================= HELPERS =================

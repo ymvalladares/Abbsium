@@ -1,11 +1,13 @@
 {
   "version": 2,
-  "dgSpecHash": "/oNow8mMVtE=",
+  "dgSpecHash": "ekOAd3Dl2bM=",
   "success": true,
   "projectFilePath": "C:\\Mybook\\React\\Abbsium\\Server\\Server\\Server.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\yorda\\.nuget\\packages\\automapper\\8.1.1\\automapper.8.1.1.nupkg.sha512",
     "C:\\Users\\yorda\\.nuget\\packages\\automapper.extensions.microsoft.dependencyinjection\\6.1.1\\automapper.extensions.microsoft.dependencyinjection.6.1.1.nupkg.sha512",
+    "C:\\Users\\yorda\\.nuget\\packages\\awssdk.core\\3.7.300.1\\awssdk.core.3.7.300.1.nupkg.sha512",
+    "C:\\Users\\yorda\\.nuget\\packages\\awssdk.s3\\3.7.300.1\\awssdk.s3.3.7.300.1.nupkg.sha512",
     "C:\\Users\\yorda\\.nuget\\packages\\bouncycastle.cryptography\\2.6.2\\bouncycastle.cryptography.2.6.2.nupkg.sha512",
     "C:\\Users\\yorda\\.nuget\\packages\\google.apis\\1.70.0\\google.apis.1.70.0.nupkg.sha512",
     "C:\\Users\\yorda\\.nuget\\packages\\google.apis.auth\\1.70.0\\google.apis.auth.1.70.0.nupkg.sha512",

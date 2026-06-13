@@ -11,12 +11,22 @@ using Server.Middleware;
 using Server.Repositories;
 using Server.Repositories.IRepositories;
 using Server.Services;
+using Server.Services.SocialMedia;
+using Server.Services.SocialMedia.Implementations;
+using Server.Services.SocialMedia.Interfaces;
 using Stripe;
 using System;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 var serverVersion = new MySqlServerVersion(new Version(8, 0, 29));
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 524288000; // 500MB
+    options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10);
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
+});
 
 /* =========================
    DEPENDENCY INJECTION
@@ -26,9 +36,23 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ITokenService, Server.Services.TokenService>();
 builder.Services.AddScoped<IChatService, Server.Services.ChatService>();
 builder.Services.AddScoped<IEmailSender, EmailService>();
+builder.Services.AddScoped<IS3Service, S3Service>();
 
 
 builder.Services.AddHttpClient();
+
+builder.Services.AddHttpClient("SocialMedia", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(10);
+});
+
+builder.Services.AddScoped<ISocialPublisher, FacebookPublisher>();
+builder.Services.AddScoped<ISocialPublisher, InstagramPublisher>();
+builder.Services.AddScoped<ISocialPublisher, YouTubePublisher>();
+builder.Services.AddScoped<ISocialPublisher, TikTokPublisher>();
+builder.Services.AddScoped<ISocialMediaOrchestrator, SocialMediaOrchestrator>();
+builder.Services.AddHostedService<PostHistoryCleanupService>();
+builder.Services.AddHostedService<SocialTokenRefreshService>();
 
 builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);
 
@@ -93,7 +117,7 @@ builder.Services.AddAuthentication(options =>
             var path = context.HttpContext.Request.Path;
 
             if (!string.IsNullOrEmpty(accessToken) &&
-                path.StartsWithSegments("/hubs/chat"))
+                (path.StartsWithSegments("/hubs/chat") || path.StartsWithSegments("/hubs/publishing")))
             {
                 context.Token = accessToken;
             }
@@ -109,17 +133,10 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("ChatCorsPolicy", policy =>
+    options.AddPolicy("CorsPolicy", policy =>
     {
         policy
-            .WithOrigins(
-                "http://localhost:3000",
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "https://localhost:3000",
-                "https://abbsium.com",
-                "https://www.abbsium.com"
-            )
+            .WithOrigins("http://localhost:3000")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -143,7 +160,12 @@ builder.Services.AddSignalR(options =>
    CONTROLLERS & SWAGGER
 ========================= */
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -170,15 +192,14 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseStatusCodePages();
-app.UseMiddleware<GeneralMidleware>();
-
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
 
-/* ? AQUI ESTABA EL ERROR */
-app.UseCors("ChatCorsPolicy");
+app.UseCors("CorsPolicy");
+
+app.UseMiddleware<GeneralMidleware>();
 
 StripeConfiguration.ApiKey =
     builder.Configuration.GetSection("Stripe:SecretKey").Get<string>();
@@ -193,6 +214,9 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.MapHub<ChatHub>("/hubs/chat")
-   .RequireCors("ChatCorsPolicy");
+   .RequireCors("CorsPolicy");
+
+app.MapHub<PublishingHub>("/hubs/publishing")
+   .RequireCors("CorsPolicy");
 
 app.Run();

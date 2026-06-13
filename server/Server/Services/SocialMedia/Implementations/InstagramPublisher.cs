@@ -7,6 +7,7 @@ using Server.Models.SocialMedia.Requests;
 using Server.Models.SocialMedia.Responses;
 using Server.Services.SocialMedia.Base;
 using Server.Services.SocialMedia.Interfaces;
+using Server.Services;
 using System.Text.Json;
 
 namespace Server.Services.SocialMedia.Implementations
@@ -67,14 +68,14 @@ namespace Server.Services.SocialMedia.Implementations
                 var containerId = await CreateMediaContainer(igUserId, acc.AccessToken, imageUrl, request.Caption ?? request.Message ?? "");
                 if (string.IsNullOrEmpty(containerId))
                 {
-                    result.ErrorMessage = "Failed to create media container";
+                    result.ErrorMessage = "Error creating the post. Please verify the image is valid and try again.";
                     return result;
                 }
 
                 var publishedMediaId = await PublishMediaContainer(igUserId, acc.AccessToken, containerId);
                 if (string.IsNullOrEmpty(publishedMediaId))
                 {
-                    result.ErrorMessage = "Failed to publish media";
+                    result.ErrorMessage = "Error publishing to Instagram. Please try again in a few minutes.";
                     return result;
                 }
 
@@ -127,14 +128,14 @@ namespace Server.Services.SocialMedia.Implementations
                 var containerId = await CreateVideoContainer(igUserId, acc.AccessToken, videoUrl, request.Caption ?? request.Message ?? "", mediaType);
                 if (string.IsNullOrEmpty(containerId))
                 {
-                    result.ErrorMessage = "Failed to create video container";
+                    result.ErrorMessage = "Error creating the video. Please ensure it is MP4 and under 90 seconds for posts, or 15 minutes for Reels.";
                     return result;
                 }
 
                 var publishedMediaId = await PublishMediaContainer(igUserId, acc.AccessToken, containerId);
                 if (string.IsNullOrEmpty(publishedMediaId))
                 {
-                    result.ErrorMessage = "Failed to publish video";
+                    result.ErrorMessage = "Error publishing the video to Instagram. Please try again in a few minutes.";
                     return result;
                 }
 

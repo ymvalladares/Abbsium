@@ -53,6 +53,7 @@ namespace Server.Services.SocialMedia.Implementations
                 existingAccount.IsActive = true;
                 existingAccount.ProviderAccountId = tokenResponse.UserId;
                 existingAccount.AccountName = username;
+                existingAccount.LastRefreshedAt = DateTime.UtcNow;
             }
             else
             {
@@ -66,7 +67,8 @@ namespace Server.Services.SocialMedia.Implementations
                     Scope = "user_profile,user_media,instagram_basic,instagram_content_publish",
                     IsActive = true,
                     ProviderAccountId = tokenResponse.UserId,
-                    AccountName = username
+                    AccountName = username,
+                    LastRefreshedAt = DateTime.UtcNow
                 });
             }
 
@@ -84,6 +86,7 @@ namespace Server.Services.SocialMedia.Implementations
             acc.AccessToken = newToken.AccessToken;
             acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
             acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+            acc.LastRefreshedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
@@ -107,6 +110,7 @@ namespace Server.Services.SocialMedia.Implementations
                     acc.AccessToken = newToken.AccessToken;
                     acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    acc.LastRefreshedAt = DateTime.UtcNow;
                     await _db.SaveChangesAsync();
                     return true;
                 }

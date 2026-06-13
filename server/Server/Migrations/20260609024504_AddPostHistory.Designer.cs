@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Server.Data;
 
@@ -10,9 +11,10 @@ using Server.Data;
 namespace Server.Migrations
 {
     [DbContext(typeof(DbContext_app))]
-    partial class DbContext_appModelSnapshot : ModelSnapshot
+    [Migration("20260609024504_AddPostHistory")]
+    partial class AddPostHistory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -364,49 +366,6 @@ namespace Server.Migrations
                     b.ToTable("PostHistory");
                 });
 
-            modelBuilder.Entity("Server.Entitys.PublishSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("Caption")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Platforms")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("S3Key")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("S3Url")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("PublishSessions");
-                });
-
             modelBuilder.Entity("Server.Entitys.RefreshToken", b =>
                 {
                     b.Property<int>("Id")
@@ -458,9 +417,6 @@ namespace Server.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
-
-                    b.Property<DateTime?>("LastRefreshedAt")
-                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("Provider")
                         .IsRequired()
@@ -596,17 +552,6 @@ namespace Server.Migrations
                 });
 
             modelBuilder.Entity("Server.Entitys.PostHistory", b =>
-                {
-                    b.HasOne("Server.Entitys.User_data", "User_data")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User_data");
-                });
-
-            modelBuilder.Entity("Server.Entitys.PublishSession", b =>
                 {
                     b.HasOne("Server.Entitys.User_data", "User_data")
                         .WithMany()

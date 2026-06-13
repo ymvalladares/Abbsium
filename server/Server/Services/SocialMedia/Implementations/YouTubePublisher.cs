@@ -7,6 +7,7 @@ using Server.Models.SocialMedia.Requests;
 using Server.Models.SocialMedia.Responses;
 using Server.Services.SocialMedia.Base;
 using Server.Services.SocialMedia.Interfaces;
+using Server.Services;
 using System.Text.Json;
 
 namespace Server.Services.SocialMedia.Implementations
@@ -62,6 +63,8 @@ namespace Server.Services.SocialMedia.Implementations
                     ? ExtractBase64Media(request.VideoUrl)
                     : await DownloadMediaAsync(request.VideoUrl);
 
+                _logger.LogInformation("Uploading video to YouTube: {Size} bytes", videoBytes.Length);
+
                 var videoId = await UploadVideoToYouTube(
                     acc.AccessToken,
                     videoBytes,
@@ -71,7 +74,7 @@ namespace Server.Services.SocialMedia.Implementations
 
                 if (string.IsNullOrEmpty(videoId))
                 {
-                    result.ErrorMessage = "Failed to upload video to YouTube";
+                    result.ErrorMessage = "Error uploading the video to YouTube. Please ensure it is MP4 and under 256GB.";
                     return result;
                 }
 
@@ -90,10 +93,9 @@ namespace Server.Services.SocialMedia.Implementations
 
         private async Task<string?> UploadVideoToYouTube(string accessToken, byte[] videoBytes, string title, string description, bool isShort)
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient("SocialMedia");
 
-            var boundary = "---------------------------" + DateTime.Now.Ticks.ToString("x");
-            var content = new MultipartFormDataContent(boundary);
+            var boundary = "==================" + DateTime.Now.Ticks.ToString("x") + "==";
 
             var metadata = new
             {
@@ -111,12 +113,26 @@ namespace Server.Services.SocialMedia.Implementations
             };
 
             var metadataJson = JsonSerializer.Serialize(metadata);
-            var metadataContent = new StringContent(metadataJson, System.Text.Encoding.UTF8, "application/json");
-            content.Add(metadataContent, "metadata");
+            var metadataBytes = System.Text.Encoding.UTF8.GetBytes(metadataJson);
 
-            content.Add(new ByteArrayContent(videoBytes), "video", "video.mp4");
+            var body = new List<byte>();
 
-            var url = "https://www.googleapis.com/upload/youtube/v3/videos?part=snippet,status";
+            body.AddRange(System.Text.Encoding.UTF8.GetBytes($"--{boundary}\r\n"));
+            body.AddRange(System.Text.Encoding.UTF8.GetBytes("Content-Type: application/json; charset=UTF-8\r\n\r\n"));
+            body.AddRange(metadataBytes);
+            body.AddRange(System.Text.Encoding.UTF8.GetBytes("\r\n"));
+
+            body.AddRange(System.Text.Encoding.UTF8.GetBytes($"--{boundary}\r\n"));
+            body.AddRange(System.Text.Encoding.UTF8.GetBytes("Content-Type: video/*\r\n\r\n"));
+            body.AddRange(videoBytes);
+            body.AddRange(System.Text.Encoding.UTF8.GetBytes("\r\n"));
+            body.AddRange(System.Text.Encoding.UTF8.GetBytes($"--{boundary}--\r\n"));
+
+            var content = new ByteArrayContent(body.ToArray());
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("multipart/related");
+            content.Headers.ContentType.Parameters.Add(new System.Net.Http.Headers.NameValueHeaderValue("boundary", $"\"{boundary}\""));
+
+            var url = "https://www.googleapis.com/upload/youtube/v3/videos?part=snippet&part=status&uploadType=multipart";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = content
@@ -128,7 +144,7 @@ namespace Server.Services.SocialMedia.Implementations
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("YouTube upload failed: {Response}", responseString);
+                _logger.LogWarning("YouTube upload failed: {StatusCode} {Response}", response.StatusCode, responseString);
                 return null;
             }
 

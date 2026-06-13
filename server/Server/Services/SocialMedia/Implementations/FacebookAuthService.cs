@@ -57,6 +57,7 @@ namespace Server.Services.SocialMedia.Implementations
                 existingAccount.IsActive = true;
                 existingAccount.ProviderAccountId = pageId;
                 existingAccount.AccountName = pageName;
+                existingAccount.LastRefreshedAt = DateTime.UtcNow;
             }
             else
             {
@@ -70,7 +71,8 @@ namespace Server.Services.SocialMedia.Implementations
                     Scope = "public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement",
                     IsActive = true,
                     ProviderAccountId = pageId,
-                    AccountName = pageName
+                    AccountName = pageName,
+                    LastRefreshedAt = DateTime.UtcNow
                 });
             }
 
@@ -86,6 +88,7 @@ namespace Server.Services.SocialMedia.Implementations
             var newToken = await RefreshAccessToken(acc.AccessToken);
             acc.AccessToken = newToken.AccessToken;
             acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+            acc.LastRefreshedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
@@ -107,6 +110,7 @@ namespace Server.Services.SocialMedia.Implementations
                     var newToken = await RefreshAccessToken(acc.AccessToken);
                     acc.AccessToken = newToken.AccessToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
+                    acc.LastRefreshedAt = DateTime.UtcNow;
                     await _db.SaveChangesAsync();
                     return true;
                 }

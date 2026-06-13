@@ -7,6 +7,7 @@ using Server.Models.SocialMedia.Requests;
 using Server.Models.SocialMedia.Responses;
 using Server.Services.SocialMedia.Base;
 using Server.Services.SocialMedia.Interfaces;
+using Server.Services;
 using System.Text.Json;
 
 namespace Server.Services.SocialMedia.Implementations
@@ -38,11 +39,16 @@ namespace Server.Services.SocialMedia.Implementations
                     return result;
                 }
 
-                var client = _httpClientFactory.CreateClient();
+                var client = _httpClientFactory.CreateClient("SocialMedia");
                 var pageId = request.PageId ?? acc.ProviderAccountId;
-                var fbUrl = string.IsNullOrEmpty(pageId)
-                    ? "https://graph.facebook.com/me/feed"
-                    : $"https://graph.facebook.com/{pageId}/feed";
+
+                if (string.IsNullOrEmpty(pageId))
+                {
+                    result.ErrorMessage = "Facebook Page ID is required. Connect a Facebook Page first.";
+                    return result;
+                }
+
+                var fbUrl = $"https://graph.facebook.com/{pageId}/feed";
 
                 var content = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
@@ -55,7 +61,8 @@ namespace Server.Services.SocialMedia.Implementations
 
                 if (!fbResponse.IsSuccessStatusCode)
                 {
-                    result.ErrorMessage = $"Facebook API error: {responseString}";
+                    var friendlyTitle = SocialErrorMapper.MapFacebookError(responseString, out var userAction);
+                    result.ErrorMessage = $"{friendlyTitle}: {userAction}";
                     return result;
                 }
 
@@ -95,11 +102,16 @@ namespace Server.Services.SocialMedia.Implementations
                     return result;
                 }
 
-                var client = _httpClientFactory.CreateClient();
+                var client = _httpClientFactory.CreateClient("SocialMedia");
                 var pageId = request.PageId ?? acc.ProviderAccountId;
-                var fbUrl = string.IsNullOrEmpty(pageId)
-                    ? "https://graph.facebook.com/me/photos"
-                    : $"https://graph.facebook.com/{pageId}/photos";
+
+                if (string.IsNullOrEmpty(pageId))
+                {
+                    result.ErrorMessage = "Facebook Page ID is required. Connect a Facebook Page first.";
+                    return result;
+                }
+
+                var fbUrl = $"https://graph.facebook.com/{pageId}/photos";
 
                 var content = new MultipartFormDataContent();
                 byte[] bytes;
@@ -119,7 +131,7 @@ namespace Server.Services.SocialMedia.Implementations
                 }
 
                 content.Add(new ByteArrayContent(bytes), "source", "photo.jpg");
-                content.Add(new StringContent(request.Message ?? ""), "message");
+                content.Add(new StringContent(request.Caption ?? request.Message ?? ""), "message");
                 content.Add(new StringContent(acc.AccessToken), "access_token");
 
                 var fbResponse = await client.PostAsync(fbUrl, content);
@@ -127,7 +139,8 @@ namespace Server.Services.SocialMedia.Implementations
 
                 if (!fbResponse.IsSuccessStatusCode)
                 {
-                    result.ErrorMessage = $"Facebook API error: {responseString}";
+                    var friendlyTitle = SocialErrorMapper.MapFacebookError(responseString, out var userAction);
+                    result.ErrorMessage = $"{friendlyTitle}: {userAction}";
                     return result;
                 }
 
@@ -167,11 +180,16 @@ namespace Server.Services.SocialMedia.Implementations
                     return result;
                 }
 
-                var client = _httpClientFactory.CreateClient();
+                var client = _httpClientFactory.CreateClient("SocialMedia");
                 var pageId = request.PageId ?? acc.ProviderAccountId;
-                var fbUrl = string.IsNullOrEmpty(pageId)
-                    ? "https://graph.facebook.com/me/videos"
-                    : $"https://graph.facebook.com/{pageId}/videos";
+
+                if (string.IsNullOrEmpty(pageId))
+                {
+                    result.ErrorMessage = "Facebook Page ID is required. Connect a Facebook Page first.";
+                    return result;
+                }
+
+                var fbUrl = $"https://graph.facebook.com/{pageId}/videos";
 
                 var content = new MultipartFormDataContent();
                 byte[] bytes;
@@ -190,16 +208,21 @@ namespace Server.Services.SocialMedia.Implementations
                     return result;
                 }
 
+                _logger.LogInformation("Uploading video to Facebook: {Size} bytes to {Url}", bytes.Length, fbUrl);
+
                 content.Add(new ByteArrayContent(bytes), "source", "video.mp4");
-                content.Add(new StringContent(request.Message ?? ""), "description");
+                content.Add(new StringContent(request.Caption ?? request.Message ?? ""), "description");
                 content.Add(new StringContent(acc.AccessToken), "access_token");
 
                 var fbResponse = await client.PostAsync(fbUrl, content);
                 var responseString = await fbResponse.Content.ReadAsStringAsync();
 
+                _logger.LogInformation("Facebook video upload response: {StatusCode}", fbResponse.StatusCode);
+
                 if (!fbResponse.IsSuccessStatusCode)
                 {
-                    result.ErrorMessage = $"Facebook API error: {responseString}";
+                    var friendlyTitle = SocialErrorMapper.MapFacebookError(responseString, out var userAction);
+                    result.ErrorMessage = $"{friendlyTitle}: {userAction}";
                     return result;
                 }
 

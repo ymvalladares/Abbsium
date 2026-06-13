@@ -89,10 +89,21 @@ namespace Server.Services.SocialMedia.Base
 
         protected async Task<byte[]> DownloadMediaAsync(string url)
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient("SocialMedia");
+            _logger.LogInformation("Downloading media from: {Url}", url);
+            
             var response = await client.GetAsync(url);
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadAsByteArrayAsync();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Failed to download media: {StatusCode} - {Content}", response.StatusCode, errorContent);
+                throw new Exception($"Failed to download media: {response.StatusCode}");
+            }
+            
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            _logger.LogInformation("Media downloaded successfully: {Size} bytes", bytes.Length);
+            return bytes;
         }
 
         protected byte[] ExtractBase64Media(string dataUri)

@@ -51,6 +51,10 @@
         "net6.0": {
           "targetAlias": "net6.0",
           "dependencies": {
+            "AWSSDK.S3": {
+              "target": "Package",
+              "version": "[3.7.300.1, )"
+            },
             "AutoMapper": {
               "target": "Package",
               "version": "[8.1.1, )"

@@ -133,4 +133,6 @@ C:\Users\yorda\AppData\Local\Temp\opencode\server-build3\Server.deps.json
 C:\Users\yorda\AppData\Local\Temp\opencode\server-build3\Server.runtimeconfig.json
 C:\Users\yorda\AppData\Local\Temp\opencode\server-build3\Server.dll
 C:\Users\yorda\AppData\Local\Temp\opencode\server-build3\Server.pdb
+C:\Mybook\React\Abbsium\server\Server\bin\Debug\net6.0\AWSSDK.Core.dll
+C:\Mybook\React\Abbsium\server\Server\bin\Debug\net6.0\AWSSDK.S3.dll
 C:\Mybook\React\Abbsium\Server\Server\obj\Debug\net6.0\staticwebassets.upToDateCheck.txt

@@ -24,5 +24,9 @@ namespace Server.Data
 
         public DbSet<Message> Messages { get; set; }
 
+        public DbSet<PostHistory> PostHistory { get; set; }
+        
+        public DbSet<PublishSession> PublishSessions { get; set; }
+
     }
 }
