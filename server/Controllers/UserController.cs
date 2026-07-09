@@ -317,6 +317,14 @@ namespace Server.Controllers
                 });
             }
 
+            // Enviar email de confirmacion
+            await _emailSender.SendEmail(new Email
+            {
+                To = user.Email,
+                Subject = "Your password has been changed - Abbsium",
+                Body = PasswordChangedTemplate.Build(user.UserName)
+            });
+
             return Ok(new AuthResponseDTO
             {
                 Success = true,
