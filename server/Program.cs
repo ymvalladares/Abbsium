@@ -72,7 +72,12 @@ builder.Services.AddDbContext<DbContext_app>(options =>
    IDENTITY
 ========================= */
 
-builder.Services.AddIdentity<User_data, IdentityRole>()
+builder.Services.AddIdentity<User_data, IdentityRole>(options =>
+{
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+    options.Lockout.MaxFailedAccessAttempts = 5;
+    options.Lockout.AllowedForNewUsers = true;
+})
     .AddEntityFrameworkStores<DbContext_app>()
     .AddDefaultTokenProviders();
 
@@ -137,7 +142,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("CorsPolicy", policy =>
     {
         policy
-            .WithOrigins("http://localhost:3000", "https://www.abbsium.com")
+            .WithOrigins("http://localhost:3000", "https://www.abbsium.com", "https://abbsium.com")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();

@@ -133,14 +133,47 @@ namespace Server.Controllers
                 });
             }
 
-            var result = await _signInManager.CheckPasswordSignInAsync(user, model.Password, false);
-            if (!result.Succeeded)
+            if (await _userManager.IsLockedOutAsync(user))
             {
+                var lockoutEnd = user.LockoutEnd;
+                var remainingMinutes = lockoutEnd.HasValue ? Math.Ceiling((lockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes) : 0;
+
                 return BadRequest(new AuthResponseDTO
                 {
                     Success = false,
-                    Message = "Invalid password."
+                    Message = $"Account is locked. Please try again in {remainingMinutes} minute(s).",
+                    Data = new { IsLockedOut = true, LockoutEnd = lockoutEnd }
                 });
+            }
+
+            var result = await _signInManager.CheckPasswordSignInAsync(user, model.Password, lockoutOnFailure: true);
+
+            if (result.IsLockedOut)
+            {
+                var lockoutEnd = user.LockoutEnd;
+                var remainingMinutes = lockoutEnd.HasValue ? Math.Ceiling((lockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes) : 0;
+
+                return BadRequest(new AuthResponseDTO
+                {
+                    Success = false,
+                    Message = $"Account has been locked due to too many failed attempts. Please try again in {remainingMinutes} minute(s).",
+                    Data = new { IsLockedOut = true, LockoutEnd = lockoutEnd }
+                });
+            }
+
+            if (!result.Succeeded)
+            {
+                var attemptsRemaining = 5 - user.AccessFailedCount;
+                return BadRequest(new AuthResponseDTO
+                {
+                    Success = false,
+                    Message = $"Invalid password. {attemptsRemaining} attempt(s) remaining."
+                });
+            }
+
+            if (user.AccessFailedCount > 0)
+            {
+                await _userManager.ResetAccessFailedCountAsync(user);
             }
 
             // Generar access token (JWT)

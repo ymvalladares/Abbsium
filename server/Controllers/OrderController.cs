@@ -34,6 +34,8 @@ namespace Server.Controllers
             if (request.Mode != "payment" && request.Mode != "subscription")
                 return BadRequest(new { message = "Invalid mode. Use 'payment' or 'subscription'." });
 
+            var baseUrl = _config["ClientUrl"] ?? "http://localhost:3000";
+
             SessionCreateOptions options;
 
             if (request.Mode == "payment")
@@ -60,8 +62,8 @@ namespace Server.Controllers
                     Quantity = 1
                 }
             },
-                    SuccessUrl = "https://abbsium.com/platform/success-payment?session_id={CHECKOUT_SESSION_ID}",
-                    CancelUrl = "https://abbsium.com/platform/payment-denied",
+                    SuccessUrl = $"{baseUrl}/platform/success-payment?session_id={{CHECKOUT_SESSION_ID}}",
+                    CancelUrl = $"{baseUrl}/platform/payment-denied",
                     Metadata = new Dictionary<string, string>
             {
                 { "userId",      userId              },
@@ -99,8 +101,8 @@ namespace Server.Controllers
                     Quantity = 1
                 }
             },
-                    SuccessUrl = "https://abbsium.com/platform/success-payment?session_id={CHECKOUT_SESSION_ID}",
-                    CancelUrl = "https://abbsium.com/platform/payment-denied",
+                    SuccessUrl = $"{baseUrl}/platform/success-payment?session_id={{CHECKOUT_SESSION_ID}}",
+                    CancelUrl = $"{baseUrl}/platform/payment-denied",
                     Metadata = new Dictionary<string, string>
             {
                 { "userId",      userId              },
@@ -123,6 +125,7 @@ namespace Server.Controllers
                 "starter" => "Starter Plan",
                 "professional" => "Professional Plan",
                 "enterprise" => "Enterprise Plan",
+                "dealer" => "Dealer Plan",
                 _ => serviceType
             };
 
@@ -140,6 +143,7 @@ namespace Server.Controllers
                 "starter" => "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&auto=format&fit=crop",
                 "professional" => "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop",
                 "enterprise" => "https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=800&auto=format&fit=crop",
+                "dealer" => "https://images.unsplash.com/photo-1562519776-b232588f8000?w=800&auto=format&fit=crop",
                 _ => "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop"
             };
 
