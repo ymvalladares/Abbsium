@@ -1,0 +1,252 @@
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Server.EmailTemplates;
+using Server.Entitys;
+using Server.Repositories.IRepositories;
+using Stripe;
+using Stripe.Checkout;
+using System.Security.Claims;
+
+namespace Server.Controllers
+{
+    [Authorize]
+    public class OrderController : Base_Control_Api
+    {
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IEmailSender _emailSender;
+        private readonly IConfiguration _config;
+
+        public OrderController(IUnitOfWork unitOfWork, IEmailSender emailSender, IConfiguration config)
+        {
+            _unitOfWork = unitOfWork;
+            _emailSender = emailSender;
+            _config = config;
+        }
+
+        [HttpPost("create-checkout-session")]
+        public async Task<IActionResult> CreateCheckoutSession([FromBody] CreatePaymentRequest request)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (request.Amount <= 0)
+                return BadRequest(new { message = "Amount must be greater than 0." });
+
+            if (request.Mode != "payment" && request.Mode != "subscription")
+                return BadRequest(new { message = "Invalid mode. Use 'payment' or 'subscription'." });
+
+            SessionCreateOptions options;
+
+            if (request.Mode == "payment")
+            {
+                options = new SessionCreateOptions
+                {
+                    PaymentMethodTypes = new List<string> { "card" },
+                    Mode = "payment",
+                    LineItems = new List<SessionLineItemOptions>
+            {
+                new()
+                {
+                    PriceData = new SessionLineItemPriceDataOptions
+                    {
+                        Currency   = "usd",
+                        UnitAmount = (long)(request.Amount * 100),
+                        ProductData = new SessionLineItemPriceDataProductDataOptions
+                        {
+                            Name        = GetPlanName(request.ServiceType),
+                            Description = GetPlanDescription(request.ServiceType, request.Amount, request.Mode),
+                            Images      = new List<string> { GetPlanImage(request.ServiceType) }
+                        }
+                    },
+                    Quantity = 1
+                }
+            },
+                    SuccessUrl = "https://abbsium.com/platform/success-payment?session_id={CHECKOUT_SESSION_ID}",
+                    CancelUrl = "https://abbsium.com/platform/payment-denied",
+                    Metadata = new Dictionary<string, string>
+            {
+                { "userId",      userId              },
+                { "serviceType", request.ServiceType },
+                { "planMode",    "payment"           },
+                { "plan_type",   "one-time"          }
+            }
+                };
+            }
+            else
+            {
+                options = new SessionCreateOptions
+                {
+                    PaymentMethodTypes = new List<string> { "card" },
+                    Mode = "subscription",
+                    LineItems = new List<SessionLineItemOptions>
+            {
+                new()
+                {
+                    PriceData = new SessionLineItemPriceDataOptions
+                    {
+                        Currency   = "usd",
+                        UnitAmount = (long)(request.Amount * 100),
+                        Recurring  = new SessionLineItemPriceDataRecurringOptions
+                        {
+                            Interval = "month"
+                        },
+                        ProductData = new SessionLineItemPriceDataProductDataOptions
+                        {
+                            Name        = GetPlanName(request.ServiceType),
+                            Description = GetPlanDescription(request.ServiceType, request.Amount, request.Mode),
+                            Images      = new List<string> { GetPlanImage(request.ServiceType) }
+                        }
+                    },
+                    Quantity = 1
+                }
+            },
+                    SuccessUrl = "https://abbsium.com/platform/success-payment?session_id={CHECKOUT_SESSION_ID}",
+                    CancelUrl = "https://abbsium.com/platform/payment-denied",
+                    Metadata = new Dictionary<string, string>
+            {
+                { "userId",      userId              },
+                { "serviceType", request.ServiceType },
+                { "planMode",    "subscription"      },
+                { "plan_type",   "subscription"      }
+            }
+                };
+            }
+
+            var service = new SessionService();
+            var session = await service.CreateAsync(options);
+
+            return Ok(new { sessionId = session.Id, sessionUrl = session.Url });
+        }
+
+        private static string GetPlanName(string serviceType) =>
+            serviceType.ToLower() switch
+            {
+                "starter" => "Starter Plan",
+                "professional" => "Professional Plan",
+                "enterprise" => "Enterprise Plan",
+                _ => serviceType
+            };
+
+        private static string GetPlanDescription(string serviceType, decimal amount, string mode)
+        {
+            var name = GetPlanName(serviceType);
+            var formatted = amount.ToString("F2");
+            var prefix = mode == "subscription" ? $"${formatted}/mo · Monthly subscription" : $"${formatted} · One-time payment";
+            return $"{prefix} · {name}";
+        }
+
+        private static string GetPlanImage(string serviceType) =>
+            serviceType.ToLower() switch
+            {
+                "starter" => "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&auto=format&fit=crop",
+                "professional" => "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop",
+                "enterprise" => "https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=800&auto=format&fit=crop",
+                _ => "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop"
+            };
+
+        // POST /api/order/verify
+        [HttpPost("verify")]
+        public async Task<IActionResult> VerifyPayment([FromBody] PaymentVerificationRequest request)
+        {
+            var sessionService = new SessionService();
+            var session = await sessionService.GetAsync(request.SessionId, new SessionGetOptions
+            {
+                Expand = new List<string> { "subscription" }
+            });
+
+            // Suscripciones recién creadas tienen "no_payment_required" o "paid"
+            var isPaid = session.PaymentStatus == "paid" ||
+                         session.PaymentStatus == "no_payment_required";
+
+            if (!isPaid)
+                return BadRequest(new { message = "Payment failed or incomplete." });
+
+            var userId = session.Metadata["userId"];
+            var serviceType = session.Metadata["serviceType"];
+            var planMode = session.Metadata.GetValueOrDefault("planMode", "payment");
+            var amount = (decimal)(session.AmountTotal ?? 0) / 100M;
+
+            // Idempotencia: subscription usa SubscriptionId, pago único usa PaymentIntentId
+            var dedupeId = planMode == "subscription"
+                ? session.SubscriptionId
+                : session.PaymentIntentId;
+
+            var existing = await _unitOfWork.OrderRepository
+                .GetFirstOrDefaultAsync(o => o.PaymentIntentId == dedupeId);
+
+            if (existing == null)
+            {
+                var order = new Order
+                {
+                    UserId = userId,
+                    Amount = amount,
+                    Currency = session.Currency ?? "usd",
+                    ServiceType = serviceType,
+                    PaymentIntentId = dedupeId,
+                    Status = "Completed"
+                };
+
+                _unitOfWork.OrderRepository.Add(order);
+                await _unitOfWork.SaveAsync();
+
+                // Notificar al admin
+                var user = await _unitOfWork.UserRepository.GetFirstOrDefaultAsync(u => u.Id == userId);
+
+                // Email al admin (ya lo tienes)
+                await _emailSender.SendEmail(new Email
+                {
+                    To = _config["AdminUser:adminEmail"],
+                    Subject = $"New Order — {GetPlanName(serviceType)}",
+                    Body = NewOrderTemplate.Build(
+                        userName: user?.UserName ?? userId,
+                        userEmail: user?.Email ?? "unknown",
+                        planName: GetPlanName(serviceType),
+                        planMode: planMode,
+                        amount: amount,
+                        currency: (session.Currency ?? "usd").ToUpper(),
+                        orderId: dedupeId
+                    )
+                });
+
+                // Email al user confirmando su orden
+                await _emailSender.SendEmail(new Email
+                {
+                    To = user?.Email ?? "unknown",
+                    Subject = $"Your {GetPlanName(serviceType)} order is confirmed!",
+                    Body = OrderConfirmationTemplate.Build(
+                        userName: user?.UserName ?? "there",
+                        planName: GetPlanName(serviceType),
+                        planMode: planMode,
+                        amount: amount,
+                        currency: (session.Currency ?? "usd").ToUpper(),
+                        orderId: dedupeId
+                    )
+                });
+            }
+
+            return Ok(new
+            {
+                message = "Payment verified.",
+                planMode,
+                serviceType
+            });
+        }
+
+        // GET /api/order
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Order>>> GetAllOrders()
+        {
+            var orders = await _unitOfWork.OrderRepository.GetAllAsync();
+            if (orders == null) return BadRequest("Orders not found");
+            return Ok(orders);
+        }
+
+        // GET /api/order/ById/{id}
+        [HttpGet("ById/{id}")]
+        public async Task<ActionResult<Order>> GetOrderById(Guid id)
+        {
+            var order = await _unitOfWork.OrderRepository
+                .GetFirstOrDefaultAsync(x => x.Id == id, x => x.User_data);
+            return Ok(order);
+        }
+    }
+}
