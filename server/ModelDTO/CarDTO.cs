@@ -83,4 +83,26 @@ namespace Server.ModelDTO
         public bool IsCover { get; set; }
         public int Order { get; set; }
     }
+
+    public class PublicCarResponseDTO
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+        public int Year { get; set; }
+        public string Make { get; set; } = string.Empty;
+        public string Model { get; set; } = string.Empty;
+        public string? Trim { get; set; }
+        public int? Mileage { get; set; }
+        public string? Transmission { get; set; }
+        public string? FuelType { get; set; }
+        public string? ExteriorColor { get; set; }
+        public string? InteriorColor { get; set; }
+        public string? Description { get; set; }
+        public string? TitleType { get; set; }
+        public string Status { get; set; } = "available";
+        public bool Featured { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public List<CarPhotoDTO>? Photos { get; set; }
+    }
 }

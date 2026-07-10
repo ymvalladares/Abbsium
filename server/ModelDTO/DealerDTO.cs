@@ -31,4 +31,11 @@ namespace Server.ModelDTO
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
     }
+
+    public class PublicDealerInfoDTO
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? Logo { get; set; }
+        public string? PrimaryColor { get; set; }
+    }
 }

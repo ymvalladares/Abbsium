@@ -142,7 +142,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("CorsPolicy", policy =>
     {
         policy
-            .WithOrigins("http://localhost:3000", "https://www.abbsium.com", "https://abbsium.com")
+            .WithOrigins("http://localhost:3000", "http://localhost:5173", "https://www.abbsium.com", "https://abbsium.com")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
