@@ -4,6 +4,7 @@
     {
         IUserRepository UserRepository { get; }
         IOrderRepository OrderRepository { get; }
+        IPaymentHistoryRepository PaymentHistoryRepository { get; }
         IRefreshTokenRepository RefreshTokenRepository { get; }
         IDealerRepository DealerRepository { get; }
         ICarRepository CarRepository { get; }

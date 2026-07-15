@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Server.Data;
 
@@ -10,9 +11,10 @@ using Server.Data;
 namespace Server.Migrations
 {
     [DbContext(typeof(DbContext_app))]
-    partial class DbContext_appModelSnapshot : ModelSnapshot
+    [Migration("20260710034021_AddMoreSubscriptionFields")]
+    partial class AddMoreSubscriptionFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -578,69 +580,6 @@ namespace Server.Migrations
                     b.ToTable("Order");
                 });
 
-            modelBuilder.Entity("Server.Entitys.PaymentHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(65,30)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<Guid?>("DealerId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("FailedAttempts")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Notes")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<Guid>("OrderId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("PaidAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("StripeInvoiceId")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("StripeInvoiceUrl")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("StripePaymentIntentId")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrderId");
-
-                    b.ToTable("PaymentHistories");
-                });
-
             modelBuilder.Entity("Server.Entitys.PostHistory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -940,17 +879,6 @@ namespace Server.Migrations
                     b.Navigation("Dealer");
 
                     b.Navigation("User_data");
-                });
-
-            modelBuilder.Entity("Server.Entitys.PaymentHistory", b =>
-                {
-                    b.HasOne("Server.Entitys.Order", "Order")
-                        .WithMany()
-                        .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("Server.Entitys.PostHistory", b =>

@@ -15,6 +15,8 @@ namespace Server.Repositories
 
             OrderRepository = new OrderRepository(_db);
 
+            PaymentHistoryRepository = new PaymentHistoryRepository(_db);
+
             RefreshTokenRepository = new RefreshTokenRepository(_db);
 
             DealerRepository = new DealerRepository(_db);
@@ -26,6 +28,8 @@ namespace Server.Repositories
 
         public IUserRepository UserRepository { get; private set; }
         public IOrderRepository OrderRepository { get; private set; }
+
+        public IPaymentHistoryRepository PaymentHistoryRepository { get; private set; }
 
         public IRefreshTokenRepository RefreshTokenRepository { get; private set; }
 

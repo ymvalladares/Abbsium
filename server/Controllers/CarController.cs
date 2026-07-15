@@ -86,8 +86,16 @@ namespace Server.Controllers
         [HttpGet("ByDealer/{dealerId}")]
         public async Task<ActionResult<IEnumerable<CarResponseDTO>>> getCarsByDealer(Guid dealerId)
         {
+            var dealer = await _unitOfWork.DealerRepository.GetFirstOrDefaultAsync(x => x.Id == dealerId);
+            if (dealer == null) return NotFound("Dealer not found");
+
+            if (!dealer.IsActive)
+            {
+                return Ok(new { message = "Dealer is not active. Please contact support to reactivate your account.", cars = new List<CarResponseDTO>() });
+            }
+
             var cars = await _unitOfWork.CarRepository.GetAllAsync(x => x.DealerId == dealerId);
-            if (cars == null || !cars.Any()) return BadRequest("Cars not found");
+            if (cars == null || !cars.Any()) return Ok(new List<CarResponseDTO>());
 
             var carDtos = new List<CarResponseDTO>();
 
@@ -199,7 +207,7 @@ namespace Server.Controllers
                         Vin = upsertDto.Vin,
                         Description = upsertDto.Description,
                         TitleType = upsertDto.TitleType ?? "Clean",
-                        Status = upsertDto.Status,
+                        Status = "available",
                         Featured = upsertDto.Featured,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
@@ -352,6 +360,8 @@ namespace Server.Controllers
             var dealer = await _unitOfWork.DealerRepository.GetFirstOrDefaultAsync(x => x.Id == car.DealerId);
             if (dealer == null) return NotFound("Dealer not found");
 
+            if (!dealer.IsActive) return BadRequest("Dealer is not active. Please contact support to reactivate your account.");
+
             if (dealer.OwnerId != currentUserId)
             {
                 var roles = await _userManager.GetRolesAsync(await _userManager.FindByIdAsync(currentUserId));
@@ -413,6 +423,12 @@ namespace Server.Controllers
                         errors.Add($"Unauthorized to delete car (ID: {carId})");
                         continue;
                     }
+                }
+
+                if (!dealer.IsActive)
+                {
+                    errors.Add($"Dealer is not active (ID: {carId})");
+                    continue;
                 }
 
                 await _s3Service.DeleteCarPhotosAsync(car.DealerId, carId);

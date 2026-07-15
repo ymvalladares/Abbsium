@@ -10,12 +10,18 @@
                     <head>
                       <meta charset='UTF-8'>
                       <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+                      <style>
+                        @media only screen and (max-width: 600px) {{
+                          .email-bg {{ background-color: #ffffff !important; padding: 0 !important; }}
+                          .content-table {{ border-radius: 0 !important; border: none !important; }}
+                        }}
+                      </style>
                     </head>
                     <body style='margin:0;padding:0;background-color:#f0f4ff;font-family:DM Sans,Segoe UI,sans-serif;'>
-                      <table width='100%' cellpadding='0' cellspacing='0' style='background-color:#f0f4ff;padding:40px 16px;'>
+                      <table width='100%' cellpadding='0' cellspacing='0' class='email-bg' style='background-color:#f0f4ff;padding:40px 16px;'>
                         <tr>
                           <td align='center'>
-                            <table width='100%' cellpadding='0' cellspacing='0' style='max-width:560px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #e8eaed;'>
+                            <table width='100%' cellpadding='0' cellspacing='0' class='content-table' style='max-width:560px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #e8eaed;'>
 
                               <!-- Header -->
                               <tr>

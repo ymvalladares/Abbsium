@@ -1,0 +1,14 @@
+ALTER TABLE `Order` DROP COLUMN `StripeCustomerEmail`;
+ALTER TABLE `Order` DROP COLUMN `StripeInvoiceUrl`;
+ALTER TABLE `Order` DROP COLUMN `StripePaymentMethod`;
+ALTER TABLE `Order` DROP COLUMN `StripeBrand`;
+ALTER TABLE `Order` DROP COLUMN `StripeLast4`;
+ALTER TABLE `Order` DROP COLUMN `StripeExpMonth`;
+ALTER TABLE `Order` DROP COLUMN `StripeExpYear`;
+ALTER TABLE `Order` DROP COLUMN `CurrentPeriodStart`;
+ALTER TABLE `Order` DROP COLUMN `CurrentPeriodEnd`;
+ALTER TABLE `Order` DROP COLUMN `TrialEnd`;
+ALTER TABLE `Order` DROP COLUMN `Quantity`;
+ALTER TABLE `Order` DROP COLUMN `Interval`;
+ALTER TABLE `Order` DROP COLUMN `IntervalCount`;
+ALTER TABLE `Order` DROP COLUMN `CancelAtPeriodEnd`;
