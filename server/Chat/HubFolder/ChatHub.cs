@@ -259,5 +259,23 @@ namespace Server.Chat.HubFolder
                 _logger.LogError(ex, $"Error marking as read: {conversationId}");
             }
         }
+
+        public async Task SendTypingIndicator(string conversationId, string targetUserId, bool isTyping)
+        {
+            var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userRole = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
+            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(targetUserId)) return;
+
+            var targetGroup = userRole == "Admin"
+                ? $"User_{targetUserId}"
+                : $"Admin_{targetUserId}";
+
+            await Clients.Group(targetGroup).SendAsync("userTyping", new
+            {
+                userId,
+                conversationId,
+                isTyping
+            });
+        }
     }
 }

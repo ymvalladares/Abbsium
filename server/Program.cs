@@ -224,6 +224,8 @@ StripeConfiguration.ApiKey =
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseMiddleware<MaintenanceMiddleware>();
+
 /* =========================
    ENDPOINTS
 ========================= */

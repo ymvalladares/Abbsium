@@ -65,7 +65,7 @@ namespace Server.Controllers
             }
             catch (KeyNotFoundException)
             {
-                return NotFound();
+                return Ok(Array.Empty<object>());
             }
         }
 

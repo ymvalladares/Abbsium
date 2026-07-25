@@ -35,5 +35,7 @@ namespace Server.Data
 
         public DbSet<CarPhoto> CarPhotos { get; set; }
 
+        public DbSet<SiteSettings> SiteSettings { get; set; }
+
     }
 }

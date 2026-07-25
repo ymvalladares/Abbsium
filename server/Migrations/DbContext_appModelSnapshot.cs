@@ -750,6 +750,29 @@ namespace Server.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
+            modelBuilder.Entity("Server.Entitys.SiteSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsUnderMaintenance")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime?>("LastUpdatedBy")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("MaintenanceMessage")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime?>("MaintenanceStartedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SiteSettings");
+                });
+
             modelBuilder.Entity("Server.Entitys.SocialAccount", b =>
                 {
                     b.Property<Guid>("Id")
@@ -804,6 +827,9 @@ namespace Server.Migrations
             modelBuilder.Entity("Server.Entitys.User_data", b =>
                 {
                     b.HasBaseType("Microsoft.AspNetCore.Identity.IdentityUser");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
 
                     b.HasDiscriminator().HasValue("User_data");
                 });

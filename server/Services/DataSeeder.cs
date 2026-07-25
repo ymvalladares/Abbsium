@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Server.Data;
 using Server.Entitys;
 
 namespace Server.Services
@@ -62,6 +64,20 @@ namespace Server.Services
                     var errors = string.Join(", ", roleResult.Errors.Select(e => e.Description));
                     throw new Exception($"Failed to assign role to admin: {errors}");
                 }
+            }
+
+            // Seed SiteSettings
+            using var scope = serviceProvider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<DbContext_app>();
+            if (!await dbContext.SiteSettings.AnyAsync())
+            {
+                dbContext.SiteSettings.Add(new SiteSettings
+                {
+                    IsUnderMaintenance = false,
+                    MaintenanceMessage = null,
+                    MaintenanceStartedAt = null
+                });
+                await dbContext.SaveChangesAsync();
             }
 
         }
