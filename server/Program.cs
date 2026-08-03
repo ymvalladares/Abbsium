@@ -52,8 +52,11 @@ builder.Services.AddScoped<ISocialPublisher, InstagramPublisher>();
 builder.Services.AddScoped<ISocialPublisher, YouTubePublisher>();
 builder.Services.AddScoped<ISocialPublisher, TikTokPublisher>();
 builder.Services.AddScoped<ISocialMediaOrchestrator, SocialMediaOrchestrator>();
+builder.Services.AddSingleton<IBackgroundPublishQueue, BackgroundPublishQueue>();
+builder.Services.AddHostedService<PublishWorkerService>();
 builder.Services.AddHostedService<PostHistoryCleanupService>();
 builder.Services.AddHostedService<SocialTokenRefreshService>();
+builder.Services.AddHostedService<ScheduledPostWorker>();
 
 builder.Services.AddAutoMapper(typeof(AutoMapperProfiles).Assembly);
 
@@ -74,6 +77,12 @@ builder.Services.AddDbContext<DbContext_app>(options =>
 
 builder.Services.AddIdentity<User_data, IdentityRole>(options =>
 {
+    options.Password.RequireDigit = true;
+    options.Password.RequireLowercase = true;
+    options.Password.RequireUppercase = true;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequiredLength = 8;
+    options.Password.RequiredUniqueChars = 1;
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
     options.Lockout.MaxFailedAccessAttempts = 5;
     options.Lockout.AllowedForNewUsers = true;
@@ -97,7 +106,7 @@ var tokenValidationParams = new TokenValidationParameters
     ValidateIssuer = false,
     ValidateAudience = false,
     ValidateLifetime = true,
-    RequireExpirationTime = false,
+    RequireExpirationTime = true,
     ClockSkew = TimeSpan.Zero
 };
 
@@ -203,8 +212,11 @@ using (var scope = app.Services.CreateScope())
    MIDDLEWARE PIPELINE
 ========================= */
 
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.UseStatusCodePages();
 app.UseHttpsRedirection();

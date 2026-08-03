@@ -50,9 +50,13 @@ namespace Server.Services.SocialMedia.Implementations
 
                 var fbUrl = $"https://graph.facebook.com/{pageId}/feed";
 
+                var message = !string.IsNullOrEmpty(request.Title)
+                    ? (string.IsNullOrEmpty(request.Caption) ? request.Title : $"{request.Title}\n\n{request.Caption}")
+                    : (request.Caption ?? "");
+
                 var content = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
-                    ["message"] = request.Caption ?? request.Title ?? "",
+                    ["message"] = message,
                     ["access_token"] = acc.AccessToken
                 });
 
@@ -130,8 +134,12 @@ namespace Server.Services.SocialMedia.Implementations
                     return result;
                 }
 
+                var photoMessage = !string.IsNullOrEmpty(request.Title)
+                    ? (string.IsNullOrEmpty(request.Caption) ? request.Title : $"{request.Title}\n\n{request.Caption}")
+                    : (request.Caption ?? "");
+
                 content.Add(new ByteArrayContent(bytes), "source", "photo.jpg");
-                content.Add(new StringContent(request.Caption ?? request.Title ?? ""), "message");
+                content.Add(new StringContent(photoMessage), "message");
                 content.Add(new StringContent(acc.AccessToken), "access_token");
 
                 var fbResponse = await client.PostAsync(fbUrl, content);
@@ -208,21 +216,44 @@ namespace Server.Services.SocialMedia.Implementations
                     return result;
                 }
 
-                _logger.LogInformation("Uploading video to Facebook: {Size} bytes to {Url}", bytes.Length, fbUrl);
+                _logger.LogInformation("Uploading video to Facebook: {Size} bytes ({SizeMB} MB) to {Url}", 
+                    bytes.Length, (bytes.Length / 1024.0 / 1024.0).ToString("F2"), fbUrl);
+
+                if (bytes.Length > 256 * 1024 * 1024)
+                {
+                    result.ErrorMessage = "Video too large for Facebook (max 256MB)";
+                    return result;
+                }
+
+                var videoMessage = !string.IsNullOrEmpty(request.Title)
+                    ? (string.IsNullOrEmpty(request.Caption) ? request.Title : $"{request.Title}\n\n{request.Caption}")
+                    : (request.Caption ?? "");
 
                 content.Add(new ByteArrayContent(bytes), "source", "video.mp4");
-                content.Add(new StringContent(request.Caption ?? request.Title ?? ""), "description");
+                if (!string.IsNullOrEmpty(request.Title))
+                {
+                    content.Add(new StringContent(request.Title), "title");
+                }
+                content.Add(new StringContent(videoMessage), "description");
                 content.Add(new StringContent(acc.AccessToken), "access_token");
 
                 var fbResponse = await client.PostAsync(fbUrl, content);
                 var responseString = await fbResponse.Content.ReadAsStringAsync();
 
-                _logger.LogInformation("Facebook video upload response: {StatusCode}", fbResponse.StatusCode);
+                _logger.LogInformation("Facebook video upload response: {StatusCode} - {Response}", 
+                    fbResponse.StatusCode, responseString.Length > 500 ? responseString.Substring(0, 500) : responseString);
 
                 if (!fbResponse.IsSuccessStatusCode)
                 {
-                    var friendlyTitle = SocialErrorMapper.MapFacebookError(responseString, out var userAction);
-                    result.ErrorMessage = $"{friendlyTitle}: {userAction}";
+                    if (string.IsNullOrEmpty(responseString))
+                    {
+                        result.ErrorMessage = $"Facebook returned HTTP {fbResponse.StatusCode} with empty response. Video may be too large or format not supported.";
+                    }
+                    else
+                    {
+                        var friendlyTitle = SocialErrorMapper.MapFacebookError(responseString, out var userAction);
+                        result.ErrorMessage = $"{friendlyTitle}: {userAction}";
+                    }
                     return result;
                 }
 

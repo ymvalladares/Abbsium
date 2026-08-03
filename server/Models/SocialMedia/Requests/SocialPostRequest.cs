@@ -17,5 +17,8 @@ namespace Server.Models.SocialMedia.Requests
         public string? PageId { get; set; }
         public string? YouTubePlaylistId { get; set; }
         public bool IsShort { get; set; }
+
+        public string ScheduleType { get; set; } = "now"; // "now" or "scheduled"
+        public DateTime? ScheduledFor { get; set; }
     }
 }

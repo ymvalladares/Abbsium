@@ -119,6 +119,8 @@ namespace Server.Controllers
         [HttpPost("Upsert")]
         public async Task<ActionResult<AuthResponseDTO>> upsertCar([FromBody] CarDTO upsertDto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
             try
             {
                 // Validar que el dealer existe
@@ -227,7 +229,7 @@ namespace Server.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+                return StatusCode(500, new { message = "An error occurred" });
             }
         }
 
@@ -257,11 +259,11 @@ namespace Server.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                return StatusCode(500, new { message = "Failed to generate upload URL", error = ex.Message });
+                return StatusCode(500, new { message = "Failed to generate upload URL" });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return StatusCode(500, new { message = "An unexpected error occurred", error = ex.Message });
+                return StatusCode(500, new { message = "An unexpected error occurred" });
             }
         }
 

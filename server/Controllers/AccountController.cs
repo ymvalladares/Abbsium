@@ -70,21 +70,6 @@ namespace Server.Controllers
 
             var result = await _userManager.CreateAsync(newUser, model.Password);
 
-            // Generar token de confirmación
-            var token = await _userManager.GenerateEmailConfirmationTokenAsync(newUser);
-            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-
-            // Construir link
-            var confirmLink = $"{_config["ClientUrl"]}/email-confirmed?userId={newUser.Id}&token={encodedToken}";
-
-            // Enviar email
-            await _emailSender.SendEmail(new Email
-            {
-                To = model.Email,
-                Subject = "Confirm your Abbsium account",
-                Body = EmailConfirmationTemplate.Build(confirmLink)
-            });
-
             if (!result.Succeeded)
             {
                 string errors = string.Join("; ", result.Errors.Select(e => e.Description));
@@ -98,7 +83,20 @@ namespace Server.Controllers
             // 4) Asignar rol por defecto
             await _userManager.AddToRoleAsync(newUser, Roles.Role_User);
 
-            // 5) Respuesta
+            // 5) Generar token de confirmación y enviar email
+            var token = await _userManager.GenerateEmailConfirmationTokenAsync(newUser);
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+            var confirmLink = $"{_config["ClientUrl"]}/email-confirmed?userId={newUser.Id}&token={encodedToken}";
+
+            await _emailSender.SendEmail(new Email
+            {
+                To = model.Email,
+                Subject = "Confirm your Abbsium account",
+                Body = EmailConfirmationTemplate.Build(confirmLink)
+            });
+
+            // 6) Respuesta
             return Ok(new AuthResponseDTO
             {
                 Success = true,
@@ -163,11 +161,10 @@ namespace Server.Controllers
 
             if (!result.Succeeded)
             {
-                var attemptsRemaining = 5 - user.AccessFailedCount;
                 return BadRequest(new AuthResponseDTO
                 {
                     Success = false,
-                    Message = $"Invalid password. {attemptsRemaining} attempt(s) remaining."
+                    Message = "Invalid email or password."
                 });
             }
 
@@ -287,7 +284,7 @@ namespace Server.Controllers
                 return StatusCode(500, new AuthResponseDTO
                 {
                     Success = false,
-                    Message = $"Internal error: {ex.Message}"
+                    Message = "Internal error occurred. Please try again later."
                 });
             }
         }
@@ -360,9 +357,12 @@ namespace Server.Controllers
         [HttpPost("reset-password")]
         public async Task<ActionResult<AuthResponseDTO>> ResetPassword([FromBody] ResetPasswordDTO model)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new AuthResponseDTO { Success = false, Message = "Invalid request data." });
+
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
-                return BadRequest(new AuthResponseDTO { Success = false, Message = "Invalid email." });
+                return Ok(new AuthResponseDTO { Success = true, Message = "If an account exists for that email, the password has been reset." });
 
             // Decodifica el token ← esto es clave
             var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(model.Token));

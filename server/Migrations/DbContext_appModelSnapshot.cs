@@ -750,6 +750,74 @@ namespace Server.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
+            modelBuilder.Entity("Server.Entitys.ScheduledPost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Caption")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("longtext");
+
+                    b.Property<bool>("IsShort")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("PageId")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Platforms")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("PublishSessionId")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("S3Key")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("S3Url")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("ScheduledFor")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("ThumbnailUrl")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<string>("YouTubePlaylistId")
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ScheduledPosts");
+                });
+
             modelBuilder.Entity("Server.Entitys.SiteSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -1010,6 +1078,17 @@ namespace Server.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Server.Entitys.ScheduledPost", b =>
+                {
+                    b.HasOne("Server.Entitys.User_data", "User_data")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User_data");
                 });
 
             modelBuilder.Entity("Server.Entitys.SocialAccount", b =>

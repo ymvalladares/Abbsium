@@ -29,10 +29,16 @@ namespace Server.Controllers
         [HttpPost("create-checkout-session")]
         public async Task<IActionResult> CreateCheckoutSession([FromBody] CreatePaymentRequest request)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
+
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
             if (request.Amount <= 0)
                 return BadRequest(new { message = "Amount must be greater than 0." });
+
+            if (request.Amount > 999999)
+                return BadRequest(new { message = "Amount exceeds maximum allowed." });
 
             if (request.Mode != "payment" && request.Mode != "subscription")
                 return BadRequest(new { message = "Invalid mode. Use 'payment' or 'subscription'." });
@@ -350,15 +356,33 @@ namespace Server.Controllers
         [HttpGet("ById/{id}")]
         public async Task<ActionResult<Order>> GetOrderById(Guid id)
         {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+            var isAdmin = roles.Contains("Admin");
+
             var order = await _unitOfWork.OrderRepository
                 .GetFirstOrDefaultAsync(x => x.Id == id, x => x.User_data, x => x.Dealer);
             if (order == null) return NotFound("Order not found");
+
+            if (!isAdmin && order.UserId != userId)
+                return Unauthorized("You do not have permission to view this order");
+
             return Ok(order);
         }
 
         [HttpGet("ByDealer/{dealerId}")]
         public async Task<ActionResult<IEnumerable<Order>>> GetOrdersByDealer(Guid dealerId)
         {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+            var isAdmin = roles.Contains("Admin");
+
+            var dealer = await _unitOfWork.DealerRepository.GetFirstOrDefaultAsync(x => x.Id == dealerId);
+            if (dealer == null) return NotFound("Dealer not found");
+
+            if (!isAdmin && dealer.OwnerId != userId)
+                return Unauthorized("You do not have permission to view these orders");
+
             var orders = await _unitOfWork.OrderRepository.GetAllAsync(
                 o => o.DealerId == dealerId,
                 o => o.User_data

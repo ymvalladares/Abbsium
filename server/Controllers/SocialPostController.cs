@@ -21,19 +21,22 @@ namespace Server.Controllers
         private readonly ILogger<SocialPostController> _logger;
         private readonly IS3Service _s3Service;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly IBackgroundPublishQueue _publishQueue;
 
         public SocialPostController(
             ISocialMediaOrchestrator orchestrator,
             DbContext_app db,
             ILogger<SocialPostController> logger,
             IS3Service s3Service,
-            IServiceScopeFactory scopeFactory)
+            IServiceScopeFactory scopeFactory,
+            IBackgroundPublishQueue publishQueue)
         {
             _orchestrator = orchestrator;
             _db = db;
             _logger = logger;
             _s3Service = s3Service;
             _scopeFactory = scopeFactory;
+            _publishQueue = publishQueue;
         }
 
         [HttpPost("s3/presigned")]
@@ -58,6 +61,9 @@ namespace Server.Controllers
         [HttpPost("publish")]
         public async Task<IActionResult> Publish([FromBody] SocialPostRequest request)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
+
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId))
                 return Unauthorized();
@@ -65,14 +71,51 @@ namespace Server.Controllers
             if (request.Platforms == null || request.Platforms.Count == 0)
                 return BadRequest("At least one platform is required");
 
-            _logger.LogInformation("Publish request from user {UserId} to platforms: {Platforms}",
-                userId, string.Join(", ", request.Platforms));
+            var isScheduled = request.ScheduleType == "scheduled" && request.ScheduledFor.HasValue;
+
+            if (isScheduled && request.ScheduledFor.Value <= DateTime.UtcNow)
+                return BadRequest("Scheduled time must be in the future");
+
+            _logger.LogInformation("{Action} request from user {UserId} to platforms: {Platforms}{ScheduleInfo}",
+                isScheduled ? "Schedule" : "Publish",
+                userId, string.Join(", ", request.Platforms),
+                isScheduled ? $" for {request.ScheduledFor.Value:yyyy-MM-dd HH:mm} UTC" : "");
 
             try
             {
                 var s3Url = request.VideoUrl ?? request.PhotoUrl ?? "";
                 var s3Key = ExtractKeyFromUrl(s3Url);
-                
+
+                if (isScheduled)
+                {
+                    var scheduledPost = new ScheduledPost
+                    {
+                        UserId = userId,
+                        S3Key = s3Key,
+                        S3Url = s3Url,
+                        Title = request.Title ?? "",
+                        Caption = request.Caption ?? "",
+                        Platforms = System.Text.Json.JsonSerializer.Serialize(request.Platforms),
+                        IsShort = request.IsShort,
+                        PageId = request.PageId,
+                        YouTubePlaylistId = request.YouTubePlaylistId,
+                        ThumbnailUrl = request.ThumbnailUrl,
+                        ScheduledFor = request.ScheduledFor.Value.ToUniversalTime(),
+                        Status = "scheduled"
+                    };
+
+                    _db.ScheduledPosts.Add(scheduledPost);
+                    await _db.SaveChangesAsync();
+
+                    return Ok(new
+                    {
+                        scheduledPostId = scheduledPost.Id.ToString(),
+                        message = "Post scheduled successfully",
+                        status = "scheduled",
+                        scheduledFor = scheduledPost.ScheduledFor
+                    });
+                }
+
                 var session = new PublishSession
                 {
                     UserId = userId,
@@ -91,18 +134,17 @@ namespace Server.Controllers
                 var downloadUrl = _s3Service.GeneratePresignedDownloadUrl(s3Key);
                 var title = request.Title;
                 var caption = request.Caption;
+                var isVideo = !string.IsNullOrEmpty(request.VideoUrl);
                 var isShort = request.IsShort;
                 var pageId = request.PageId;
                 var youTubePlaylistId = request.YouTubePlaylistId;
                 var thumbnailUrl = request.ThumbnailUrl;
-                var isVideo = !string.IsNullOrEmpty(request.VideoUrl);
 
-                _ = Task.Run(async () =>
+                await _publishQueue.QueueBackgroundWorkAsync(async (serviceProvider, cancellationToken) =>
                 {
-                    using var scope = _scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<DbContext_app>();
-                    var orchestrator = scope.ServiceProvider.GetRequiredService<ISocialMediaOrchestrator>();
-                    var logger = scope.ServiceProvider.GetRequiredService<ILogger<SocialPostController>>();
+                    var db = serviceProvider.GetRequiredService<DbContext_app>();
+                    var orchestrator = serviceProvider.GetRequiredService<ISocialMediaOrchestrator>();
+                    var logger = serviceProvider.GetRequiredService<ILogger<SocialPostController>>();
 
                     var bgRequest = new SocialPostRequest
                     {
@@ -171,7 +213,7 @@ namespace Server.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error publishing post for user {UserId}", userId);
-                return StatusCode(500, new { error = "Server error", details = ex.Message });
+                return StatusCode(500, new { error = "Server error" });
             }
         }
 
@@ -228,6 +270,52 @@ namespace Server.Controllers
 
             _logger.LogInformation("Cleaned up {Deleted} old post history records for user {UserId}", deleted, userId);
             return Ok(new { message = $"Deleted {deleted} records older than {daysToKeep} days" });
+        }
+
+        [HttpGet("scheduled")]
+        public async Task<IActionResult> GetScheduledPosts()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var scheduled = await _db.ScheduledPosts
+                .Where(x => x.UserId == userId && (x.Status == "scheduled" || x.Status == "processing"))
+                .OrderBy(x => x.ScheduledFor)
+                .Select(x => new
+                {
+                    id = x.Id,
+                    title = x.Title,
+                    caption = x.Caption,
+                    platforms = x.Platforms,
+                    scheduledFor = x.ScheduledFor,
+                    status = x.Status,
+                    createdAt = x.CreatedAt,
+                    isShort = x.IsShort
+                })
+                .ToListAsync();
+
+            return Ok(new { items = scheduled, total = scheduled.Count });
+        }
+
+        [HttpDelete("scheduled/{id}")]
+        public async Task<IActionResult> CancelScheduledPost(Guid id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var post = await _db.ScheduledPosts.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+            if (post == null)
+                return NotFound("Scheduled post not found");
+
+            if (post.Status != "scheduled")
+                return BadRequest("Can only cancel posts that are still scheduled");
+
+            post.Status = "cancelled";
+            await _db.SaveChangesAsync();
+
+            return Ok(new { message = "Scheduled post cancelled" });
         }
 
         private async Task SaveHistoryAsync(DbContext_app db, ILogger logger, string userId, SocialPostResult result)

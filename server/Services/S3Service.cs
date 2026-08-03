@@ -12,6 +12,26 @@ namespace Server.Services
         private readonly string _region;
         private readonly ILogger<S3Service> _logger;
 
+        private static readonly HashSet<string> AllowedImageContentTypes = new()
+        {
+            "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp"
+        };
+
+        private static readonly HashSet<string> AllowedVideoContentTypes = new()
+        {
+            "video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/x-msvideo", "video/x-matroska"
+        };
+
+        private static readonly HashSet<string> AllowedImageExtensions = new()
+        {
+            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp"
+        };
+
+        private static readonly HashSet<string> AllowedVideoExtensions = new()
+        {
+            ".mp4", ".webm", ".ogg", ".mov", ".avi", ".mkv"
+        };
+
         public S3Service(IConfiguration config, ILogger<S3Service> logger)
         {
             _bucketName = config["AWS:BucketName"] ?? throw new ArgumentNullException("AWS:BucketName");
@@ -33,7 +53,13 @@ namespace Server.Services
 
         public async Task<object> GeneratePresignedUploadUrlAsync(string fileName, string contentType, int expirationMinutes = 15)
         {
-            var key = $"uploads/{Guid.NewGuid()}_{fileName}";
+            if (!IsValidContentType(contentType, fileName, out string validationError))
+            {
+                throw new InvalidOperationException(validationError);
+            }
+
+            var sanitizedFileName = SanitizeFileName(fileName);
+            var key = $"uploads/{Guid.NewGuid()}_{sanitizedFileName}";
             
             try
             {
@@ -198,15 +224,17 @@ namespace Server.Services
 
         public async Task<object> GenerateCarPhotoPresignedUrlAsync(Guid dealerId, string dealerName, int carId, string fileName, string contentType, int expirationMinutes = 15)
         {
+            if (!IsValidContentType(contentType, fileName, out string validationError))
+            {
+                throw new InvalidOperationException(validationError);
+            }
+
             var safeName = SanitizeFolderName(dealerName);
             var folderName = $"{dealerId}_{safeName}";
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var uniqueId = Guid.NewGuid().ToString("N")[..8];
             var extension = Path.GetExtension(fileName);
-            var cleanName = Path.GetFileNameWithoutExtension(fileName)
-                .Replace(" ", "_")
-                .Replace("__", "_")
-                .Trim('_');
+            var cleanName = SanitizeFileName(Path.GetFileNameWithoutExtension(fileName));
             var key = $"dealers/{folderName}/cars/{carId}/{timestamp}_{uniqueId}_{cleanName}{extension}";
 
             try
@@ -253,6 +281,51 @@ namespace Server.Services
                 .Replace(" ", "-")
                 .Trim('-')
                 .Substring(0, Math.Min(name.Length, 50));
+        }
+
+        private string SanitizeFileName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "unnamed";
+
+            var sanitized = new string(name
+                .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.')
+                .ToArray())
+                .Replace("..", "")
+                .Trim();
+
+            if (sanitized.Length > 200)
+                sanitized = sanitized.Substring(0, 200);
+
+            return string.IsNullOrEmpty(sanitized) ? "unnamed" : sanitized;
+        }
+
+        private bool IsValidContentType(string contentType, string fileName, out string errorMessage)
+        {
+            errorMessage = null;
+            var extension = Path.GetExtension(fileName)?.ToLowerInvariant();
+
+            var isImage = AllowedImageContentTypes.Contains(contentType) || AllowedImageExtensions.Contains(extension);
+            var isVideo = AllowedVideoContentTypes.Contains(contentType) || AllowedVideoExtensions.Contains(extension);
+
+            if (!isImage && !isVideo)
+            {
+                errorMessage = "File type not allowed. Only images (jpg, png, gif, webp, svg) and videos (mp4, webm, mov) are permitted.";
+                return false;
+            }
+
+            if (isImage && !AllowedImageContentTypes.Contains(contentType) && AllowedImageExtensions.Contains(extension))
+            {
+                errorMessage = "Invalid image file type.";
+                return false;
+            }
+
+            if (isVideo && !AllowedVideoContentTypes.Contains(contentType) && AllowedVideoExtensions.Contains(extension))
+            {
+                errorMessage = "Invalid video file type.";
+                return false;
+            }
+
+            return true;
         }
 
         public string GetCarPhotoPublicUrl(string s3Key)

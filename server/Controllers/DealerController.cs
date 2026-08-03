@@ -130,6 +130,8 @@ namespace Server.Controllers
         [HttpPost("Upsert")]
         public async Task<ActionResult<AuthResponseDTO>> upsertDealer([FromBody] DealerDTO upsertDto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
             try
             {
                 // 🔐 ID del usuario logueado desde el JWT
@@ -215,7 +217,7 @@ namespace Server.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+                return StatusCode(500, new { message = "An error occurred" });
             }
         }
 

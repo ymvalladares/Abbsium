@@ -19,7 +19,8 @@ namespace Server.Controllers
         [HttpPost("Chat-Ai")]
         public async Task<IActionResult> Chat([FromBody] AiRequestDto request)
         {
-
+            if (!ModelState.IsValid)
+                return BadRequest(new { errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
 
             if (string.IsNullOrWhiteSpace(request.Message))
                 return BadRequest("Message is required");

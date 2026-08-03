@@ -11,7 +11,6 @@ using System.Security.Claims;
 
 namespace Server.Controllers
 {
-    //[Authorize(Roles = Roles.Role_Admin)]
     [Authorize]
     public class UserController : Base_Control_Api
     {
@@ -29,6 +28,7 @@ namespace Server.Controllers
         }
 
         [HttpGet("All-Users")]
+        [Authorize(Roles = Roles.Role_Admin)]
         public async Task<ActionResult<IEnumerable<UserModelDto>>> getAllUser()
         {
             var users = await _unitOfWork.UserRepository.GetAllAsync();
@@ -74,8 +74,12 @@ namespace Server.Controllers
         }
 
         [HttpPost("Upsert")]
+        [Authorize(Roles = Roles.Role_Admin)]
         public async Task<ActionResult<UserModelDto>> upsertUser([FromBody] UserModelDto upsertDto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
+
             try
             {
                 // ✅ MODO UPDATE - Si trae ID
@@ -132,8 +136,23 @@ namespace Server.Controllers
                         EmailConfirmed = true
                     };
 
-                    // ✅ Contraseña por defecto
-                    const string defaultPassword = "Abbsium.2020";
+                    // ✅ Generar contraseña aleatoria segura
+                    const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+                    const string lower = "abcdefghjkmnpqrstuvwxyz";
+                    const string digits = "23456789";
+                    const string special = "!@#$%^&*";
+                    const string all = upper + lower + digits + special;
+                    var random = new Random();
+                    var pwdChars = new List<char>
+                    {
+                        upper[random.Next(upper.Length)],
+                        lower[random.Next(lower.Length)],
+                        digits[random.Next(digits.Length)],
+                        special[random.Next(special.Length)]
+                    };
+                    for (int i = 0; i < 8; i++)
+                        pwdChars.Add(all[random.Next(all.Length)]);
+                    var defaultPassword = new string(pwdChars.OrderBy(_ => random.Next()).ToArray());
 
                     // Crear usuario con UserManager
                     var createResult = await _userManager.CreateAsync(newUser, defaultPassword);
@@ -163,18 +182,19 @@ namespace Server.Controllers
                     return Ok(new AuthResponseDTO
                     {
                         Success = true,
-                        Message = "User created successfully with default password: Abbsium.2020"
+                        Message = "User created successfully. A temporary password has been sent to the user's email."
                     });
 
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "An error occurred", error = ex.Message });
+                return StatusCode(500, new { message = "An error occurred" });
             }
         }
 
         [HttpDelete("Delete/{id}")]
+        [Authorize(Roles = Roles.Role_Admin)]
         public async Task<ActionResult> deleteUser(string id)
         {
             // Validar que el usuario existe
@@ -205,6 +225,7 @@ namespace Server.Controllers
         }
 
         [HttpDelete("Delete-Multiple")]
+        [Authorize(Roles = Roles.Role_Admin)]
         public async Task<ActionResult> deleteMultipleUsers([FromBody] List<string> userIds)
         {
             if (userIds == null || !userIds.Any())

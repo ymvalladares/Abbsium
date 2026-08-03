@@ -10,36 +10,52 @@ namespace Server.ModelDTO
         public Guid DealerId { get; set; }
 
         [Required]
+        [MaxLength(200)]
         public string Title { get; set; } = string.Empty;
 
+        [Range(0, 99999999, ErrorMessage = "Price must be between 0 and 99,999,999")]
         public decimal Price { get; set; }
 
+        [Range(1900, 2099, ErrorMessage = "Year must be between 1900 and 2099")]
         public int Year { get; set; }
 
         [Required]
+        [MaxLength(100)]
         public string Make { get; set; } = string.Empty;
 
         [Required]
+        [MaxLength(100)]
         public string Model { get; set; } = string.Empty;
 
+        [MaxLength(100)]
         public string? Trim { get; set; }
 
+        [Range(0, 9999999)]
         public int? Mileage { get; set; }
 
+        [MaxLength(50)]
         public string? Transmission { get; set; }
 
+        [MaxLength(50)]
         public string? FuelType { get; set; }
 
+        [MaxLength(50)]
         public string? ExteriorColor { get; set; }
 
+        [MaxLength(50)]
         public string? InteriorColor { get; set; }
 
+        [MaxLength(17)]
+        [RegularExpression(@"^[A-HJ-NPR-Z0-9]{17}$", ErrorMessage = "Invalid VIN format")]
         public string? Vin { get; set; }
 
+        [MaxLength(5000)]
         public string? Description { get; set; }
 
+        [MaxLength(50)]
         public string? TitleType { get; set; }
 
+        [RegularExpression(@"^(available|sold|reserved|pending)$", ErrorMessage = "Status must be available, sold, reserved, or pending")]
         public string Status { get; set; } = "available";
 
         public bool Featured { get; set; }

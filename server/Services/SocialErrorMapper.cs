@@ -67,7 +67,11 @@ namespace Server.Services
                     return "Facebook error";
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                userAction = $"Raw response: {rawResponse}";
+                return "Unknown error";
+            }
 
             userAction = "An unexpected error occurred. Please try again later.";
             return "Unknown error";

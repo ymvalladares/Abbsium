@@ -29,6 +29,8 @@ namespace Server.Data
         
         public DbSet<PublishSession> PublishSessions { get; set; }
 
+        public DbSet<ScheduledPost> ScheduledPosts { get; set; }
+
         public DbSet<Dealer> Dealers { get; set; }
 
         public DbSet<Car> Cars { get; set; }

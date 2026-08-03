@@ -8,7 +8,7 @@ using System.Security.Claims;
 
 namespace Server.Chat.HubFolder
 {
-    //[Authorize]
+    [Authorize]
     public class ChatHub : Hub
     {
         private readonly IChatService _chatService;
