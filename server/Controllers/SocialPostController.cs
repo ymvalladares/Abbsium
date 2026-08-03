@@ -73,13 +73,13 @@ namespace Server.Controllers
 
             var isScheduled = request.ScheduleType == "scheduled" && request.ScheduledFor.HasValue;
 
-            if (isScheduled && request.ScheduledFor.Value <= DateTime.UtcNow)
+            if (isScheduled && request.ScheduledFor.Value < DateTime.UtcNow.AddMinutes(1))
                 return BadRequest("Scheduled time must be in the future");
 
             _logger.LogInformation("{Action} request from user {UserId} to platforms: {Platforms}{ScheduleInfo}",
                 isScheduled ? "Schedule" : "Publish",
                 userId, string.Join(", ", request.Platforms),
-                isScheduled ? $" for {request.ScheduledFor.Value:yyyy-MM-dd HH:mm} UTC" : "");
+                isScheduled ? $" for {request.ScheduledFor.Value:yyyy-MM-dd HH:mm} UTC (Eastern Time)" : "");
 
             try
             {
@@ -100,7 +100,7 @@ namespace Server.Controllers
                         PageId = request.PageId,
                         YouTubePlaylistId = request.YouTubePlaylistId,
                         ThumbnailUrl = request.ThumbnailUrl,
-                        ScheduledFor = request.ScheduledFor.Value.ToUniversalTime(),
+                        ScheduledFor = DateTime.SpecifyKind(request.ScheduledFor.Value, DateTimeKind.Utc),
                         Status = "scheduled"
                     };
 
