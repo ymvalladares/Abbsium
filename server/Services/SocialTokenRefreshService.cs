@@ -37,7 +37,7 @@ namespace Server.Services
                     var db = scope.ServiceProvider.GetRequiredService<DbContext_app>();
 
                     var accounts = await db.SocialAccounts
-                        .Where(x => x.IsActive && !string.IsNullOrEmpty(x.RefreshToken))
+                        .Where(x => x.IsActive)
                         .ToListAsync(stoppingToken);
 
                     foreach (var acc in accounts)
@@ -138,19 +138,21 @@ namespace Server.Services
         private async Task<bool> RefreshInstagramToken(DbContext_app db, Entitys.SocialAccount acc, CancellationToken ct)
         {
             var client = _httpClientFactory.CreateClient();
-            var url = "https://graph.instagram.com/refresh_access_token";
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("grant_type", "ig_refresh_token"),
-                new KeyValuePair<string, string>("client_id", _config["Instagram:ClientId"]),
-                new KeyValuePair<string, string>("client_secret", _config["Instagram:ClientSecret"]),
-                new KeyValuePair<string, string>("refresh_token", acc.RefreshToken)
-            });
+            var url = $"https://graph.facebook.com/v19.0/oauth/access_token" +
+                      $"?grant_type=fb_exchange_token" +
+                      $"&client_id={_config["Facebook:ClientId"]}" +
+                      $"&client_secret={_config["Facebook:ClientSecret"]}" +
+                      $"&fb_exchange_token={acc.AccessToken}";
 
-            var response = await client.PostAsync(url, content, ct);
-            response.EnsureSuccessStatusCode();
-
+            var response = await client.GetAsync(url, ct);
             var json = await response.Content.ReadAsStringAsync(ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Instagram token refresh failed: {StatusCode} - {Response}", response.StatusCode, json);
+                return false;
+            }
+
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             var root = doc.RootElement;
 
@@ -160,10 +162,6 @@ namespace Server.Services
                 acc.ExpiresAt = DateTime.UtcNow.AddSeconds(
                     root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 5184000
                 );
-                if (root.TryGetProperty("refresh_token", out var rt) && rt.GetString() is string newRt)
-                {
-                    acc.RefreshToken = newRt;
-                }
                 return true;
             }
 
@@ -174,32 +172,40 @@ namespace Server.Services
         {
             var client = _httpClientFactory.CreateClient();
             var url = "https://open.tiktokapis.com/v2/oauth/token/";
-            var content = new FormUrlEncodedContent(new[]
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                new KeyValuePair<string, string>("client_key", _config["TikTok:ClientId"]),
-                new KeyValuePair<string, string>("client_secret", _config["TikTok:ClientSecret"]),
-                new KeyValuePair<string, string>("grant_type", "refresh_token"),
-                new KeyValuePair<string, string>("refresh_token", acc.RefreshToken)
+                ["client_key"] = _config["TikTok:ClientId"],
+                ["client_secret"] = _config["TikTok:ClientSecret"],
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = acc.RefreshToken
             });
 
             var response = await client.PostAsync(url, content, ct);
-            response.EnsureSuccessStatusCode();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("TikTok token refresh failed: {StatusCode}", response.StatusCode);
+                return false;
+            }
 
             var json = await response.Content.ReadAsStringAsync(ct);
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (root.TryGetProperty("access_token", out var atElem))
+            if (root.TryGetProperty("data", out var data))
             {
-                acc.AccessToken = atElem.GetString()!;
-                acc.ExpiresAt = DateTime.UtcNow.AddSeconds(
-                    root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400
-                );
-                if (root.TryGetProperty("refresh_token", out var rt) && rt.GetString() is string newRt)
+                if (data.TryGetProperty("access_token", out var atElem))
                 {
-                    acc.RefreshToken = newRt;
+                    acc.AccessToken = atElem.GetString()!;
+                    acc.ExpiresAt = DateTime.UtcNow.AddSeconds(
+                        data.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400
+                    );
+                    if (data.TryGetProperty("refresh_token", out var rt) && rt.GetString() is string newRt)
+                    {
+                        acc.RefreshToken = newRt;
+                    }
+                    return true;
                 }
-                return true;
             }
 
             return false;

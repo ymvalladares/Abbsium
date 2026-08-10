@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Server.Data;
+using Server.Entitys;
 using Server.Models.SocialMedia.Enums;
 using Server.Models.SocialMedia.Requests;
 using Server.Models.SocialMedia.Responses;
@@ -59,26 +60,44 @@ namespace Server.Services.SocialMedia.Implementations
                     return result;
                 }
 
+                if (acc.ExpiresAt <= DateTime.UtcNow.AddMinutes(5) && !string.IsNullOrEmpty(acc.RefreshToken))
+                {
+                    await RefreshTikTokAccessToken(acc);
+                }
+
                 var videoBytes = request.VideoUrl.StartsWith("data:")
                     ? ExtractBase64Media(request.VideoUrl)
                     : await DownloadMediaAsync(request.VideoUrl);
 
                 _logger.LogInformation("Uploading video to TikTok: {Size} bytes", videoBytes.Length);
 
-                var publishId = await UploadAndPublishVideo(
+                var caption = request.Caption ?? request.Title ?? "";
+
+                var (publishId, errorMessage) = await UploadVideoToTikTok(
                     acc.AccessToken,
                     videoBytes,
-                    request.Caption ?? request.Title ?? "");
+                    caption,
+                    request.IsShort);
 
-                if (string.IsNullOrEmpty(publishId))
+                if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    result.ErrorMessage = "Error uploading the video to TikTok. Please ensure it is MP4 with a duration between 3 and 10 minutes.";
+                    result.ErrorMessage = errorMessage;
+                    return result;
+                }
+
+                var (isPublished, statusError) = await WaitForPublishStatus(
+                    acc.AccessToken,
+                    publishId!);
+
+                if (!isPublished)
+                {
+                    result.ErrorMessage = statusError ?? "Video processing timed out. Please check your TikTok account.";
                     return result;
                 }
 
                 result.Success = true;
                 result.PostId = publishId;
-                result.PostUrl = $"https://www.tiktok.com/@user/video/{publishId}";
+                result.PostUrl = $"https://www.tiktok.com/video/{publishId}";
                 return result;
             }
             catch (Exception ex)
@@ -89,31 +108,33 @@ namespace Server.Services.SocialMedia.Implementations
             }
         }
 
-        private async Task<string?> UploadAndPublishVideo(string accessToken, byte[] videoBytes, string description)
+        private async Task<(string? PublishId, string? ErrorMessage)> UploadVideoToTikTok(string accessToken, byte[] videoBytes, string description, bool isShort)
         {
             var client = _httpClientFactory.CreateClient("SocialMedia");
 
-            var sessionId = await InitiateUpload(accessToken, videoBytes.Length, description);
+            var sessionId = await InitiateUpload(client, accessToken, videoBytes.Length, description, isShort);
             if (string.IsNullOrEmpty(sessionId))
             {
-                _logger.LogWarning("TikTok upload initiation failed");
-                return null;
+                return (null, "Error initiating TikTok upload. Please ensure the video is MP4 with a duration between 3 and 10 minutes.");
             }
 
-            var uploadSuccess = await UploadVideoChunks(accessToken, sessionId, videoBytes);
+            var uploadSuccess = await UploadVideoChunks(client, accessToken, sessionId, videoBytes);
             if (!uploadSuccess)
             {
-                _logger.LogWarning("TikTok video upload failed");
-                return null;
+                return (null, "Error uploading the video to TikTok. Please ensure it is MP4 format and under 10 minutes.");
             }
 
-            var publishId = await PublishVideo(accessToken, sessionId, description);
-            return publishId;
+            var publishId = await CompleteUpload(client, accessToken, sessionId);
+            if (string.IsNullOrEmpty(publishId))
+            {
+                return (null, "Error completing TikTok upload. Please try again.");
+            }
+
+            return (publishId, null);
         }
 
-        private async Task<string?> InitiateUpload(string accessToken, long videoSize, string description)
+        private async Task<string?> InitiateUpload(HttpClient client, string accessToken, long videoSize, string description, bool isShort)
         {
-            var client = _httpClientFactory.CreateClient("SocialMedia");
             var url = "https://open.tiktokapis.com/v2/post/publish/content/init/";
 
             var body = new
@@ -148,26 +169,38 @@ namespace Server.Services.SocialMedia.Implementations
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("TikTok upload init failed: {Response}", responseString);
+                _logger.LogWarning("TikTok upload init failed: {StatusCode} {Response}", response.StatusCode, responseString);
+                var mapped = SocialErrorMapper.MapTikTokError(responseString, out var userAction);
+                _logger.LogWarning("TikTok mapped error: {Mapped} - {Action}", mapped, userAction);
                 return null;
             }
 
-            using var doc = JsonDocument.Parse(responseString);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("data", out var data) &&
-                data.TryGetProperty("publish_id", out var pubIdElem))
+            try
             {
-                return pubIdElem.GetString();
-            }
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
 
-            return null;
+                if (root.TryGetProperty("data", out var data) &&
+                    data.TryGetProperty("session_id", out var sessionIdElem))
+                {
+                    var sessionId = sessionIdElem.GetString();
+                    _logger.LogInformation("TikTok upload initiated with session_id: {SessionId}", sessionId);
+                    return sessionId;
+                }
+
+                _logger.LogWarning("TikTok init response missing session_id: {Response}", responseString);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing TikTok init response: {Response}", responseString);
+                return null;
+            }
         }
 
-        private async Task<bool> UploadVideoChunks(string accessToken, string publishId, byte[] videoBytes)
+        private async Task<bool> UploadVideoChunks(HttpClient client, string accessToken, string sessionId, byte[] videoBytes)
         {
-            var client = _httpClientFactory.CreateClient("SocialMedia");
-            var url = $"https://open.tiktokapis.com/v2/post/publish/content/upload/?publish_id={publishId}";
+            var url = $"https://open.tiktokapis.com/v2/post/publish/content/upload/?session_id={sessionId}";
 
             var request = new HttpRequestMessage(HttpMethod.Put, url)
             {
@@ -177,15 +210,22 @@ namespace Server.Services.SocialMedia.Implementations
             request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("video/mp4");
 
             var response = await client.SendAsync(request);
-            return response.IsSuccessStatusCode;
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("TikTok video upload failed: {StatusCode} {Response}", response.StatusCode, responseString);
+                return false;
+            }
+
+            return true;
         }
 
-        private async Task<string?> PublishVideo(string accessToken, string publishId, string description)
+        private async Task<string?> CompleteUpload(HttpClient client, string accessToken, string sessionId)
         {
-            var client = _httpClientFactory.CreateClient("SocialMedia");
             var url = "https://open.tiktokapis.com/v2/post/publish/content/fetch/";
 
-            var body = new { publish_id = publishId };
+            var body = new { session_id = sessionId };
             var json = JsonSerializer.Serialize(body);
             var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
@@ -200,11 +240,186 @@ namespace Server.Services.SocialMedia.Implementations
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("TikTok publish failed: {Response}", responseString);
+                _logger.LogWarning("TikTok complete upload failed: {StatusCode} {Response}", response.StatusCode, responseString);
                 return null;
             }
 
-            return publishId;
+            try
+            {
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("data", out var data) &&
+                    data.TryGetProperty("publish_id", out var publishIdElem))
+                {
+                    var publishId = publishIdElem.GetString();
+                    _logger.LogInformation("TikTok upload completed with publish_id: {PublishId}", publishId);
+                    return publishId;
+                }
+
+                _logger.LogWarning("TikTok complete response missing publish_id: {Response}", responseString);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing TikTok complete response: {Response}", responseString);
+                return null;
+            }
+        }
+
+        private async Task<(bool IsPublished, string? Error)> WaitForPublishStatus(string accessToken, string publishId)
+        {
+            var client = _httpClientFactory.CreateClient("SocialMedia");
+            var maxAttempts = 60;
+            var delayMs = 5000;
+
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                await Task.Delay(delayMs);
+
+                var url = "https://open.tiktokapis.com/v2/post/publish/status/fetch/";
+
+                var body = new { publish_id = publishId };
+                var json = JsonSerializer.Serialize(body);
+                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                var request = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = content
+                };
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                var response = await client.SendAsync(request);
+                var responseString = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("TikTok status check failed: {Response}", responseString);
+                    continue;
+                }
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(responseString);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("data", out var data))
+                    {
+                        if (data.TryGetProperty("status", out var statusElem))
+                        {
+                            var status = statusElem.GetString();
+
+                            if (status == "PUBLISH_COMPLETE")
+                            {
+                                _logger.LogInformation("TikTok publish {PublishId} completed successfully", publishId);
+                                return (true, null);
+                            }
+
+                            if (status == "FAILED")
+                            {
+                                var errorMsg = ExtractTikTokErrorMessage(responseString) ?? "Video processing failed";
+                                _logger.LogWarning("TikTok publish {PublishId} failed: {Error}", publishId, errorMsg);
+                                return (false, errorMsg);
+                            }
+
+                            if (status == "PROCESSING_UPLOAD" || status == "PROCESSING_DEFAULT" || status == "PUBLISHING")
+                            {
+                                _logger.LogInformation("TikTok publish {PublishId} status: {Status} (attempt {Attempt}/{Max})", publishId, status, attempt + 1, maxAttempts);
+                                continue;
+                            }
+
+                            _logger.LogInformation("TikTok publish {PublishId} status: {Status} (attempt {Attempt}/{Max})", publishId, status, attempt + 1, maxAttempts);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error parsing TikTok status response: {Response}", responseString);
+                }
+            }
+
+            _logger.LogWarning("TikTok publish {PublishId} timed out after {MaxAttempts} attempts", publishId, maxAttempts);
+            return (false, "Video processing timed out. The video may still be processing on TikTok. Please check your account.");
+        }
+
+        private string? ExtractTikTokErrorMessage(string responseString)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("error", out var error))
+                {
+                    if (error.TryGetProperty("message", out var message))
+                    {
+                        return message.GetString();
+                    }
+                    if (error.TryGetProperty("code", out var code))
+                    {
+                        return $"TikTok error code: {code.GetInt32()}";
+                    }
+                }
+
+                if (root.TryGetProperty("data", out var data) &&
+                    data.TryGetProperty("status", out var status))
+                {
+                    return $"Status: {status.GetString()}";
+                }
+            }
+            catch { }
+
+            return responseString;
+        }
+
+        private async Task RefreshTikTokAccessToken(SocialAccount acc)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                var url = "https://open.tiktokapis.com/v2/oauth/token/";
+                var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["client_key"] = _config["TikTok:ClientId"],
+                    ["client_secret"] = _config["TikTok:ClientSecret"],
+                    ["grant_type"] = "refresh_token",
+                    ["refresh_token"] = acc.RefreshToken
+                });
+
+                var response = await client.PostAsync(url, content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorJson = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("TikTok token refresh failed: {StatusCode} {Response}", response.StatusCode, errorJson);
+                    return;
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("data", out var data))
+                {
+                    if (data.TryGetProperty("access_token", out var at))
+                    {
+                        acc.AccessToken = at.GetString()!;
+                        acc.ExpiresAt = DateTime.UtcNow.AddSeconds(
+                            data.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400
+                        );
+                        if (data.TryGetProperty("refresh_token", out var rt) && rt.GetString() is string newRt)
+                        {
+                            acc.RefreshToken = newRt;
+                        }
+                        await _db.SaveChangesAsync();
+                        _logger.LogInformation("TikTok token refreshed for account {AccountId}", acc.Id);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error refreshing TikTok token for account {AccountId}", acc.Id);
+            }
         }
     }
 }

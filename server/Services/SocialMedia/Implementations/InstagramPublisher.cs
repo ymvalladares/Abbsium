@@ -65,17 +65,25 @@ namespace Server.Services.SocialMedia.Implementations
                     imageUrl = await UploadBase64ImageAsTempUrl(request.PhotoUrl);
                 }
 
-                var containerId = await CreateMediaContainer(igUserId, acc.AccessToken, imageUrl, request.Caption ?? request.Title ?? "");
+                var caption = BuildInstagramCaption(request);
+                var (containerId, containerError) = await CreateMediaContainer(igUserId, acc.AccessToken, imageUrl, caption);
                 if (string.IsNullOrEmpty(containerId))
                 {
-                    result.ErrorMessage = "Error creating the post. Please verify the image is valid and try again.";
+                    result.ErrorMessage = containerError ?? "Error creating the post. Please verify the image is valid and try again.";
                     return result;
                 }
 
-                var publishedMediaId = await PublishMediaContainer(igUserId, acc.AccessToken, containerId);
+                var (isReady, statusError) = await WaitForContainerReady(igUserId, acc.AccessToken, containerId);
+                if (!isReady)
+                {
+                    result.ErrorMessage = statusError ?? "Image processing timed out. Please try again.";
+                    return result;
+                }
+
+                var (publishedMediaId, publishError) = await PublishMediaContainer(igUserId, acc.AccessToken, containerId);
                 if (string.IsNullOrEmpty(publishedMediaId))
                 {
-                    result.ErrorMessage = "Error publishing to Instagram. Please try again in a few minutes.";
+                    result.ErrorMessage = publishError ?? "Error publishing to Instagram. Please try again in a few minutes.";
                     return result;
                 }
 
@@ -124,18 +132,26 @@ namespace Server.Services.SocialMedia.Implementations
                     videoUrl = await UploadBase64VideoAsTempUrl(request.VideoUrl);
                 }
 
-                var mediaType = request.IsShort ? "REELS" : "VIDEO";
-                var containerId = await CreateVideoContainer(igUserId, acc.AccessToken, videoUrl, request.Caption ?? request.Title ?? "", mediaType);
+                var mediaType = "REELS";
+                var caption = BuildInstagramCaption(request);
+                var (containerId, containerError) = await CreateVideoContainer(igUserId, acc.AccessToken, videoUrl, caption, mediaType);
                 if (string.IsNullOrEmpty(containerId))
                 {
-                    result.ErrorMessage = "Error creating the video. Please ensure it is MP4 and under 90 seconds for posts, or 15 minutes for Reels.";
+                    result.ErrorMessage = containerError ?? "Error creating the video. Please ensure it is MP4 and under 90 seconds for posts, or 15 minutes for Reels.";
                     return result;
                 }
 
-                var publishedMediaId = await PublishMediaContainer(igUserId, acc.AccessToken, containerId);
+                var (isReady, statusError) = await WaitForContainerReady(igUserId, acc.AccessToken, containerId);
+                if (!isReady)
+                {
+                    result.ErrorMessage = statusError ?? "Video processing timed out. Please try again.";
+                    return result;
+                }
+
+                var (publishedMediaId, publishError) = await PublishMediaContainer(igUserId, acc.AccessToken, containerId);
                 if (string.IsNullOrEmpty(publishedMediaId))
                 {
-                    result.ErrorMessage = "Error publishing the video to Instagram. Please try again in a few minutes.";
+                    result.ErrorMessage = publishError ?? "Error publishing the video to Instagram. Please try again in a few minutes.";
                     return result;
                 }
 
@@ -155,25 +171,56 @@ namespace Server.Services.SocialMedia.Implementations
         private async Task<string?> GetInstagramBusinessAccountId(string accessToken)
         {
             var client = _httpClientFactory.CreateClient();
-            var url = $"https://graph.facebook.com/v19.0/me?fields=instagram_business_account&access_token={accessToken}";
 
-            var response = await client.GetAsync(url);
-            if (!response.IsSuccessStatusCode) return null;
-
-            var json = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("instagram_business_account", out var igAccount) &&
-                igAccount.TryGetProperty("id", out var idElem))
+            // Step 1: Get the page ID from the token
+            var meUrl = $"https://graph.facebook.com/v19.0/me?fields=id&access_token={accessToken}";
+            var meResponse = await client.GetAsync(meUrl);
+            if (!meResponse.IsSuccessStatusCode)
             {
-                return idElem.GetString();
+                var errorContent = await meResponse.Content.ReadAsStringAsync();
+                _logger.LogWarning("Failed to get page ID from token: {Response}", errorContent);
+                return null;
             }
 
+            var meJson = await meResponse.Content.ReadAsStringAsync();
+            using var meDoc = JsonDocument.Parse(meJson);
+            var meRoot = meDoc.RootElement;
+
+            if (!meRoot.TryGetProperty("id", out var pageIdElem))
+            {
+                _logger.LogWarning("Page ID not found in token response");
+                return null;
+            }
+
+            var pageId = pageIdElem.GetString();
+
+            // Step 2: Get Instagram Business Account from the page
+            var pageUrl = $"https://graph.facebook.com/v19.0/{pageId}?fields=instagram_business_account&access_token={accessToken}";
+            var pageResponse = await client.GetAsync(pageUrl);
+            if (!pageResponse.IsSuccessStatusCode)
+            {
+                var errorContent = await pageResponse.Content.ReadAsStringAsync();
+                _logger.LogWarning("Failed to get Instagram Business Account from page: {Response}", errorContent);
+                return null;
+            }
+
+            var pageJson = await pageResponse.Content.ReadAsStringAsync();
+            using var pageDoc = JsonDocument.Parse(pageJson);
+            var pageRoot = pageDoc.RootElement;
+
+            if (pageRoot.TryGetProperty("instagram_business_account", out var igAccount) &&
+                igAccount.TryGetProperty("id", out var idElem))
+            {
+                var igId = idElem.GetString();
+                _logger.LogInformation("Found Instagram Business Account: {IgAccountId} for page {PageId}", igId, pageId);
+                return igId;
+            }
+
+            _logger.LogWarning("No Instagram Business Account found on page {PageId}", pageId);
             return null;
         }
 
-        private async Task<string?> CreateMediaContainer(string igUserId, string accessToken, string imageUrl, string caption)
+        private async Task<(string? Id, string? Error)> CreateMediaContainer(string igUserId, string accessToken, string imageUrl, string caption)
         {
             var client = _httpClientFactory.CreateClient();
             var url = $"https://graph.facebook.com/v19.0/{igUserId}/media";
@@ -191,15 +238,16 @@ namespace Server.Services.SocialMedia.Implementations
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Instagram container creation failed: {Response}", responseString);
-                return null;
+                var errorMessage = ExtractInstagramErrorMessage(responseString);
+                return (null, errorMessage);
             }
 
             using var doc = JsonDocument.Parse(responseString);
             var root = doc.RootElement;
-            return root.TryGetProperty("id", out var idElem) ? idElem.GetString() : null;
+            return (root.TryGetProperty("id", out var idElem) ? idElem.GetString() : null, null);
         }
 
-        private async Task<string?> CreateVideoContainer(string igUserId, string accessToken, string videoUrl, string caption, string mediaType)
+        private async Task<(string? Id, string? Error)> CreateVideoContainer(string igUserId, string accessToken, string videoUrl, string caption, string mediaType)
         {
             var client = _httpClientFactory.CreateClient();
             var url = $"https://graph.facebook.com/v19.0/{igUserId}/media";
@@ -218,15 +266,16 @@ namespace Server.Services.SocialMedia.Implementations
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Instagram video container creation failed: {Response}", responseString);
-                return null;
+                var errorMessage = ExtractInstagramErrorMessage(responseString);
+                return (null, errorMessage);
             }
 
             using var doc = JsonDocument.Parse(responseString);
             var root = doc.RootElement;
-            return root.TryGetProperty("id", out var idElem) ? idElem.GetString() : null;
+            return (root.TryGetProperty("id", out var idElem) ? idElem.GetString() : null, null);
         }
 
-        private async Task<string?> PublishMediaContainer(string igUserId, string accessToken, string containerId)
+        private async Task<(string? Id, string? Error)> PublishMediaContainer(string igUserId, string accessToken, string containerId)
         {
             var client = _httpClientFactory.CreateClient();
             var url = $"https://graph.facebook.com/v19.0/{igUserId}/media_publish";
@@ -243,12 +292,109 @@ namespace Server.Services.SocialMedia.Implementations
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Instagram media publish failed: {Response}", responseString);
-                return null;
+                var errorMessage = ExtractInstagramErrorMessage(responseString);
+                return (null, errorMessage);
             }
 
             using var doc = JsonDocument.Parse(responseString);
             var root = doc.RootElement;
-            return root.TryGetProperty("id", out var idElem) ? idElem.GetString() : null;
+            return (root.TryGetProperty("id", out var idElem) ? idElem.GetString() : null, null);
+        }
+
+        private string? ExtractInstagramErrorMessage(string responseString)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("error", out var error) &&
+                    error.TryGetProperty("message", out var message))
+                {
+                    return message.GetString();
+                }
+            }
+            catch { }
+
+            return responseString;
+        }
+
+        private async Task<(bool IsReady, string? Error)> WaitForContainerReady(string igUserId, string accessToken, string containerId)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var maxAttempts = 30;
+            var delayMs = 5000;
+
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                await Task.Delay(delayMs);
+
+                var url = $"https://graph.facebook.com/v19.0/{containerId}?fields=status_code&access_token={accessToken}";
+                var response = await client.GetAsync(url);
+                var responseString = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Instagram container status check failed: {Response}", responseString);
+                    continue;
+                }
+
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("status_code", out var statusCodeElem))
+                {
+                    var statusCode = statusCodeElem.GetString();
+
+                    if (statusCode == "FINISHED")
+                    {
+                        _logger.LogInformation("Instagram container {ContainerId} is ready", containerId);
+                        return (true, null);
+                    }
+
+                    if (statusCode == "ERROR")
+                    {
+                        var errorMsg = root.TryGetProperty("error_message", out var msgElem)
+                            ? msgElem.GetString()
+                            : "Container processing failed";
+                        _logger.LogWarning("Instagram container {ContainerId} error: {Error}", containerId, errorMsg);
+                        return (false, errorMsg);
+                    }
+
+                    if (statusCode == "PUBLISHED")
+                    {
+                        _logger.LogInformation("Instagram container {ContainerId} already published", containerId);
+                        return (true, null);
+                    }
+
+                    _logger.LogInformation("Instagram container {ContainerId} status: {Status} (attempt {Attempt}/{Max})", containerId, statusCode, attempt + 1, maxAttempts);
+                }
+            }
+
+            _logger.LogWarning("Instagram container {ContainerId} timed out after {MaxAttempts} attempts", containerId, maxAttempts);
+            return (false, "Media processing timed out. Please try again later.");
+        }
+
+        private string BuildInstagramCaption(SocialPostRequest request)
+        {
+            var parts = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(request.Title))
+            {
+                parts.Add(request.Title.Trim());
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Caption))
+            {
+                parts.Add(request.Caption.Trim());
+            }
+
+            if (parts.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return string.Join("\n\n", parts);
         }
 
         private async Task<string> UploadBase64ImageAsTempUrl(string base64Data)

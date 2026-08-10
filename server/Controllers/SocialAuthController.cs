@@ -45,7 +45,8 @@ namespace Server.Controllers
                 $"?client_id={_config["Facebook:ClientId"]}" +
                 $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
                 $"&state={state}" +
-                $"&scope=email,public_profile,pages_show_list,pages_manage_posts,pages_read_engagement";
+                $"&scope=email,public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,business_management" +
+                $"&auth_type=rerequest";
 
             _logger.LogInformation("Facebook connect initiated for user {UserId}, redirect_uri: {RedirectUri}", userId, redirectUri);
             return Ok(new { url });
@@ -88,6 +89,13 @@ namespace Server.Controllers
 
                 if (pages.Count == 0)
                 {
+                    _logger.LogWarning("No pages found via /me/accounts, trying Business Manager API fallback");
+                    pages = await GetFacebookPagesFromBusinessManager(tokenResponse.AccessToken);
+                }
+
+                if (pages.Count == 0)
+                {
+                    _logger.LogWarning("Facebook connection failed: no pages found for user {UserId}", userId);
                     return Redirect($"{callbackUrl}?status=error&provider=facebook&error=no_pages");
                 }
 
@@ -227,7 +235,17 @@ namespace Server.Controllers
             if (root.TryGetProperty("data", out var data))
             {
                 _logger.LogInformation("Facebook pages data array length: {Count}", data.GetArrayLength());
-                
+
+                if (data.GetArrayLength() == 0)
+                {
+                    _logger.LogWarning(
+                        "Facebook /me/accounts returned empty data array. " +
+                        "This usually means the page is managed through a Business Portfolio/Meta Business Suite " +
+                        "rather than direct user ownership. The Business Manager fallback will be attempted. " +
+                        "User token was granted at: {Timestamp}",
+                        DateTime.UtcNow);
+                }
+
                 foreach (var page in data.EnumerateArray())
                 {
                     var id = page.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
@@ -251,6 +269,94 @@ namespace Server.Controllers
             return pages;
         }
 
+        private async Task<List<(string Id, string Name, string AccessToken)>> GetFacebookPagesFromBusinessManager(string accessToken)
+        {
+            var pages = new List<(string Id, string Name, string AccessToken)>();
+
+            try
+            {
+                // Step 1: Get businesses the user belongs to
+                var client = _httpClientFactory.CreateClient();
+                var businessesUrl = $"https://graph.facebook.com/v19.0/me/businesses?fields=id,name&access_token={accessToken}";
+
+                _logger.LogInformation("Requesting businesses: {Url}", businessesUrl.Replace(accessToken, "***"));
+
+                var businessesResponse = await client.GetAsync(businessesUrl);
+                var businessesJson = await businessesResponse.Content.ReadAsStringAsync();
+
+                _logger.LogInformation("Businesses response status: {StatusCode}", businessesResponse.StatusCode);
+                _logger.LogInformation("Businesses response body: {Response}", businessesJson);
+
+                if (!businessesResponse.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Failed to get businesses: {Response}", businessesJson);
+                    return pages;
+                }
+
+                using var businessesDoc = JsonDocument.Parse(businessesJson);
+                var businessesRoot = businessesDoc.RootElement;
+
+                if (!businessesRoot.TryGetProperty("data", out var businessesData) || businessesData.GetArrayLength() == 0)
+                {
+                    _logger.LogInformation("No businesses found for user");
+                    return pages;
+                }
+
+                foreach (var business in businessesData.EnumerateArray())
+                {
+                    var businessId = business.TryGetProperty("id", out var bizIdElem) ? bizIdElem.GetString() : null;
+                    if (string.IsNullOrEmpty(businessId)) continue;
+
+                    _logger.LogInformation("Trying to get pages from business: {BusinessId}", businessId);
+
+                    // Step 2: Get owned pages from the business
+                    var ownedPagesUrl = $"https://graph.facebook.com/v19.0/{businessId}/owned_pages?fields=id,name,access_token&access_token={accessToken}";
+
+                    _logger.LogInformation("Requesting owned pages: {Url}", ownedPagesUrl.Replace(accessToken, "***"));
+
+                    var ownedPagesResponse = await client.GetAsync(ownedPagesUrl);
+                    var ownedPagesJson = await ownedPagesResponse.Content.ReadAsStringAsync();
+
+                    _logger.LogInformation("Owned pages response status: {StatusCode}", ownedPagesResponse.StatusCode);
+                    _logger.LogInformation("Owned pages response body: {Response}", ownedPagesJson);
+
+                    if (!ownedPagesResponse.IsSuccessStatusCode)
+                    {
+                        _logger.LogWarning("Failed to get owned pages from business {BusinessId}: {Response}", businessId, ownedPagesJson);
+                        continue;
+                    }
+
+                    using var ownedPagesDoc = JsonDocument.Parse(ownedPagesJson);
+                    var ownedPagesRoot = ownedPagesDoc.RootElement;
+
+                    if (ownedPagesRoot.TryGetProperty("data", out var ownedPagesData))
+                    {
+                        foreach (var page in ownedPagesData.EnumerateArray())
+                        {
+                            var id = page.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                            var name = page.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
+                            var pageToken = page.TryGetProperty("access_token", out var tokenProp) ? tokenProp.GetString() : null;
+
+                            _logger.LogInformation("Business page: id={Id}, name={Name}, hasToken={HasToken}", id, name, !string.IsNullOrEmpty(pageToken));
+
+                            if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(pageToken))
+                            {
+                                pages.Add((id, name, pageToken));
+                            }
+                        }
+                    }
+                }
+
+                _logger.LogInformation("Found {Count} Facebook pages from Business Manager", pages.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting pages from Business Manager");
+            }
+
+            return pages;
+        }
+
         // ================= INSTAGRAM =================
         [Authorize]
         [HttpPost("instagram/connect")]
@@ -261,15 +367,18 @@ namespace Server.Controllers
                 return Unauthorized();
 
             var state = GenerateStateToken(userId);
+            var redirectUri = _config["Instagram:RedirectUri"];
 
             var url =
-                "https://api.instagram.com/oauth/authorize" +
-                $"?client_id={_config["Instagram:ClientId"]}" +
-                $"&redirect_uri={Uri.EscapeDataString(_config["Instagram:RedirectUri"])}" +
+                "https://www.facebook.com/v19.0/dialog/oauth" +
+                $"?client_id={_config["Facebook:ClientId"]}" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
                 $"&state={state}" +
-                $"&scope=user_profile,user_media" +
-                $"&response_type=code";
+                $"&scope=pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management" +
+                $"&response_type=code" +
+                $"&auth_type=rerequest";
 
+            _logger.LogInformation("Instagram connect initiated for user {UserId}, redirect_uri: {RedirectUri}", userId, redirectUri);
             return Ok(new { url });
         }
 
@@ -286,7 +395,7 @@ namespace Server.Controllers
 
             if (!string.IsNullOrEmpty(error))
             {
-                _logger.LogWarning("Instagram callback error: {Error}", error);
+                _logger.LogWarning("Instagram callback error: {Error} - {Description}", error, errorDescription);
                 return Redirect($"{callbackUrl}?status=error&provider=instagram&error={Uri.EscapeDataString(error)}");
             }
 
@@ -305,19 +414,67 @@ namespace Server.Controllers
 
             try
             {
-                var tokenResponse = await ExchangeInstagramCode(code);
+                // Step 1: Exchange code for Facebook user token
+                var tokenResponse = await ExchangeFacebookCodeForInstagram(code);
+
+                // Step 2: Get pages
+                var pages = await GetFacebookPages(tokenResponse.AccessToken);
+
+                if (pages.Count == 0)
+                {
+                    _logger.LogWarning("No pages found via /me/accounts for Instagram, trying Business Manager API fallback");
+                    pages = await GetFacebookPagesFromBusinessManager(tokenResponse.AccessToken);
+                }
+
+                if (pages.Count == 0)
+                {
+                    _logger.LogWarning("Instagram connection failed: no Facebook pages found for user {UserId}", userId);
+                    return Redirect($"{callbackUrl}?status=error&provider=instagram&error=no_pages");
+                }
+
+                // Step 3: Find page with Instagram Business Account
+                string? pageId = null;
+                string? pageName = null;
+                string? pageToken = null;
+                string? instagramAccountId = null;
+                string? instagramUsername = null;
+
+                foreach (var page in pages)
+                {
+                    var igAccountId = await GetInstagramBusinessAccountIdFromPage(page.AccessToken, page.Id);
+                    if (!string.IsNullOrEmpty(igAccountId))
+                    {
+                        pageId = page.Id;
+                        pageName = page.Name;
+                        pageToken = page.AccessToken;
+                        instagramAccountId = igAccountId;
+
+                        // Get Instagram username
+                        instagramUsername = await GetInstagramUsernameFromAccount(igAccountId, pageToken);
+                        break;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(instagramAccountId))
+                {
+                    _logger.LogWarning("Instagram connection failed: no Instagram Business Account found on any page for user {UserId}", userId);
+                    return Redirect($"{callbackUrl}?status=error&provider=instagram&error=no_instagram_account");
+                }
+
+                _logger.LogInformation("Instagram Business Account found: {IgAccountId} on page {PageName} for user {UserId}", instagramAccountId, pageName, userId);
 
                 var existingAccount = await _db.SocialAccounts
                     .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "instagram");
 
                 if (existingAccount != null)
                 {
-                    existingAccount.AccessToken = tokenResponse.AccessToken;
-                    existingAccount.RefreshToken = tokenResponse.RefreshToken ?? string.Empty;
+                    existingAccount.AccessToken = pageToken;
+                    existingAccount.RefreshToken = tokenResponse.LongLivedAccessToken ?? string.Empty;
                     existingAccount.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
-                    existingAccount.Scope = "user_profile,user_media";
+                    existingAccount.Scope = "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish";
                     existingAccount.IsActive = true;
-                    existingAccount.ProviderAccountId = tokenResponse.UserId;
+                    existingAccount.ProviderAccountId = instagramAccountId;
+                    existingAccount.AccountName = instagramUsername ?? pageName;
                     existingAccount.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else
@@ -326,18 +483,19 @@ namespace Server.Controllers
                     {
                         UserId = userId,
                         Provider = "instagram",
-                        AccessToken = tokenResponse.AccessToken,
-                        RefreshToken = tokenResponse.RefreshToken ?? string.Empty,
+                        AccessToken = pageToken,
+                        RefreshToken = tokenResponse.LongLivedAccessToken ?? string.Empty,
                         ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
-                        Scope = "user_profile,user_media",
+                        Scope = "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish",
                         IsActive = true,
-                        ProviderAccountId = tokenResponse.UserId,
+                        ProviderAccountId = instagramAccountId,
+                        AccountName = instagramUsername ?? pageName,
                         LastRefreshedAt = DateTime.UtcNow
                     });
                 }
 
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Instagram account saved for user {UserId}", userId);
+                _logger.LogInformation("Instagram account saved for user {UserId} with username {Username}", userId, instagramUsername);
 
                 return Redirect($"{callbackUrl}?status=success&provider=instagram");
             }
@@ -348,37 +506,97 @@ namespace Server.Controllers
             }
         }
 
-        private async Task<(string AccessToken, string? RefreshToken, int ExpiresIn, string UserId)> ExchangeInstagramCode(string code)
+        private async Task<(string AccessToken, string? LongLivedAccessToken, int ExpiresIn)> ExchangeFacebookCodeForInstagram(string code)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var redirectUri = _config["Instagram:RedirectUri"];
+
+            _logger.LogInformation("Exchanging Facebook code for Instagram, redirect_uri: {RedirectUri}", redirectUri);
+
+            var url =
+                $"https://graph.facebook.com/v19.0/oauth/access_token" +
+                $"?client_id={_config["Facebook:ClientId"]}" +
+                $"&client_secret={_config["Facebook:ClientSecret"]}" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
+                $"&code={code}";
+
+            var response = await client.GetAsync(url);
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Instagram token exchange failed: {StatusCode} - {Response}", response.StatusCode, responseString);
+                throw new Exception($"Instagram token exchange failed: {responseString}");
+            }
+
+            using var doc = JsonDocument.Parse(responseString);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("access_token", out var accessTokenElem))
+            {
+                var errorMsg = root.TryGetProperty("error", out var errorElem)
+                    ? errorElem.GetRawText()
+                    : responseString;
+                _logger.LogError("Instagram token response missing access_token: {Response}", responseString);
+                throw new Exception($"Instagram token exchange failed: {errorMsg}");
+            }
+
+            var accessToken = accessTokenElem.GetString() ?? throw new Exception("Missing access_token");
+            var expiresIn = root.TryGetProperty("expires_in", out var expiresInElem) ? expiresInElem.GetInt32() : 5184000;
+            var longLivedToken = root.TryGetProperty("long_lived_token", out var llToken) ? llToken.GetString() : null;
+
+            _logger.LogInformation("Instagram token exchanged successfully, expires_in: {ExpiresIn}", expiresIn);
+            return (accessToken, longLivedToken, expiresIn);
+        }
+
+        private async Task<string?> GetInstagramBusinessAccountIdFromPage(string pageAccessToken, string? pageId)
         {
             var client = _httpClientFactory.CreateClient();
 
-            var url = "https://api.instagram.com/oauth/access_token";
-            var content = new FormUrlEncodedContent(new[]
+            // Try with page ID first
+            var url = string.IsNullOrEmpty(pageId)
+                ? $"https://graph.facebook.com/v19.0/me?fields=instagram_business_account&access_token={pageAccessToken}"
+                : $"https://graph.facebook.com/v19.0/{pageId}?fields=instagram_business_account&access_token={pageAccessToken}";
+
+            var response = await client.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
             {
-                new KeyValuePair<string, string>("client_id", _config["Instagram:ClientId"]),
-                new KeyValuePair<string, string>("client_secret", _config["Instagram:ClientSecret"]),
-                new KeyValuePair<string, string>("grant_type", "authorization_code"),
-                new KeyValuePair<string, string>("redirect_uri", _config["Instagram:RedirectUri"]),
-                new KeyValuePair<string, string>("code", code)
-            });
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Failed to get Instagram Business Account from page: {StatusCode} - {Response}", response.StatusCode, errorContent);
+                return null;
+            }
 
-            var response = await client.PostAsync(url, content);
-            response.EnsureSuccessStatusCode();
-
-            var jsonString = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(jsonString);
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            var accessToken = root.TryGetProperty("access_token", out var atElem)
-                ? atElem.GetString() ?? throw new Exception("Missing access_token")
-                : throw new Exception($"Instagram token response missing access_token: {jsonString}");
-            var userId = root.TryGetProperty("user_id", out var uidElem)
-                ? uidElem.GetString() ?? throw new Exception("Missing user_id")
-                : throw new Exception($"Instagram token response missing user_id: {jsonString}");
-            var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 5184000;
-            var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+            if (root.TryGetProperty("instagram_business_account", out var igAccount) &&
+                igAccount.TryGetProperty("id", out var idElem))
+            {
+                var igId = idElem.GetString();
+                _logger.LogInformation("Found Instagram Business Account: {IgAccountId}", igId);
+                return igId;
+            }
 
-            return (accessToken, refreshToken, expiresIn, userId);
+            _logger.LogInformation("No Instagram Business Account found on page");
+            return null;
+        }
+
+        private async Task<string?> GetInstagramUsernameFromAccount(string instagramAccountId, string pageAccessToken)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = $"https://graph.facebook.com/v19.0/{instagramAccountId}?fields=username&access_token={pageAccessToken}";
+
+            var response = await client.GetAsync(url);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            return root.TryGetProperty("username", out var usernameElem)
+                ? usernameElem.GetString()
+                : null;
         }
 
         // ================= YOUTUBE =================
@@ -562,7 +780,7 @@ namespace Server.Controllers
                 $"?client_key={_config["TikTok:ClientId"]}" +
                 $"&redirect_uri={Uri.EscapeDataString(_config["TikTok:RedirectUri"])}" +
                 $"&state={state}" +
-                $"&scope=user.info.basic,video.upload" +
+                $"&scope=user.info.basic,video.upload,video.publish" +
                 $"&response_type=code";
 
             _logger.LogInformation("TikTok connect initiated for user {UserId}", userId);
@@ -598,7 +816,7 @@ namespace Server.Controllers
             try
             {
                 var tokenResponse = await ExchangeTikTokCode(code);
-                var openId = await GetTikTokOpenId(tokenResponse.AccessToken);
+                var (openId, displayName) = await GetTikTokUserInfo(tokenResponse.AccessToken);
 
                 var existingAccount = await _db.SocialAccounts
                     .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "tiktok");
@@ -608,9 +826,10 @@ namespace Server.Controllers
                     existingAccount.AccessToken = tokenResponse.AccessToken;
                     existingAccount.RefreshToken = tokenResponse.RefreshToken ?? string.Empty;
                     existingAccount.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
-                    existingAccount.Scope = "user.info.basic,video.upload";
+                    existingAccount.Scope = "user.info.basic,video.upload,video.publish";
                     existingAccount.IsActive = true;
                     existingAccount.ProviderAccountId = openId;
+                    existingAccount.AccountName = displayName;
                     existingAccount.LastRefreshedAt = DateTime.UtcNow;
                 }
                 else
@@ -622,15 +841,16 @@ namespace Server.Controllers
                         AccessToken = tokenResponse.AccessToken,
                         RefreshToken = tokenResponse.RefreshToken ?? string.Empty,
                         ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
-                        Scope = "user.info.basic,video.upload",
+                        Scope = "user.info.basic,video.upload,video.publish",
                         IsActive = true,
                         ProviderAccountId = openId,
+                        AccountName = displayName,
                         LastRefreshedAt = DateTime.UtcNow
                     });
                 }
 
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("TikTok account saved for user {UserId}", userId);
+                _logger.LogInformation("TikTok account saved for user {UserId} with display name {DisplayName}", userId, displayName);
 
                 return Redirect($"{callbackUrl}?status=success&provider=tiktok");
             }
@@ -645,13 +865,13 @@ namespace Server.Controllers
         {
             var client = _httpClientFactory.CreateClient();
             var url = "https://open.tiktokapis.com/v2/oauth/token/";
-            var content = new FormUrlEncodedContent(new[]
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                new KeyValuePair<string, string>("client_key", _config["TikTok:ClientId"]),
-                new KeyValuePair<string, string>("client_secret", _config["TikTok:ClientSecret"]),
-                new KeyValuePair<string, string>("grant_type", "authorization_code"),
-                new KeyValuePair<string, string>("redirect_uri", _config["TikTok:RedirectUri"]),
-                new KeyValuePair<string, string>("code", code)
+                ["client_key"] = _config["TikTok:ClientId"],
+                ["client_secret"] = _config["TikTok:ClientSecret"],
+                ["grant_type"] = "authorization_code",
+                ["redirect_uri"] = _config["TikTok:RedirectUri"],
+                ["code"] = code
             });
 
             var response = await client.PostAsync(url, content);
@@ -661,20 +881,25 @@ namespace Server.Controllers
             using var doc = JsonDocument.Parse(jsonString);
             var root = doc.RootElement;
 
-            var accessToken = root.TryGetProperty("access_token", out var atElem)
-                ? atElem.GetString() ?? throw new Exception("Missing access_token")
-                : throw new Exception($"TikTok token response missing access_token: {jsonString}");
+            if (root.TryGetProperty("data", out var data))
+            {
+                var accessToken = data.TryGetProperty("access_token", out var atElem)
+                    ? atElem.GetString() ?? throw new Exception("Missing access_token")
+                    : throw new Exception($"TikTok token response missing access_token: {jsonString}");
 
-            var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
-            var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+                var expiresIn = data.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
+                var refreshToken = data.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
 
-            return (accessToken, refreshToken, expiresIn);
+                return (accessToken, refreshToken, expiresIn);
+            }
+
+            throw new Exception($"TikTok token response invalid: {jsonString}");
         }
 
-        private async Task<string> GetTikTokOpenId(string accessToken)
+        private async Task<(string OpenId, string DisplayName)> GetTikTokUserInfo(string accessToken)
         {
             var client = _httpClientFactory.CreateClient();
-            var url = "https://open.tiktokapis.com/v2/user/info/?fields=open_id";
+            var url = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name";
 
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
@@ -686,12 +911,22 @@ namespace Server.Controllers
             using var doc = JsonDocument.Parse(jsonString);
             var root = doc.RootElement;
 
-            if (root.TryGetProperty("data", out var data) && data.TryGetProperty("open_id", out var openIdElem))
+            if (root.TryGetProperty("data", out var data))
             {
-                return openIdElem.GetString() ?? throw new Exception("Missing TikTok open_id");
+                var openId = data.TryGetProperty("open_id", out var openIdElem)
+                    ? openIdElem.GetString() ?? throw new Exception("Missing TikTok open_id")
+                    : throw new Exception("TikTok open_id not found");
+
+                var displayName = "TikTok Account";
+                if (data.TryGetProperty("display_name", out var displayNameElem))
+                {
+                    displayName = displayNameElem.GetString() ?? "TikTok Account";
+                }
+
+                return (openId, displayName);
             }
 
-            throw new Exception("No TikTok open_id found");
+            throw new Exception("Failed to get TikTok user info");
         }
 
         // ================= STATUS =================
@@ -738,11 +973,76 @@ namespace Server.Controllers
             if (acc == null)
                 return NotFound(new { error = $"{provider} account not found" });
 
+            // Revoke Facebook/Instagram permissions before deleting
+            if (provider.ToLower() == "facebook" || provider.ToLower() == "instagram")
+            {
+                try
+                {
+                    await RevokeFacebookPermissions(acc.AccessToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to revoke {Provider} permissions, continuing with deletion", provider);
+                }
+            }
+
             _db.SocialAccounts.Remove(acc);
             await _db.SaveChangesAsync();
 
             _logger.LogInformation("{Provider} account disconnected and deleted for user {UserId}", provider, userId);
             return Ok(new { message = $"{provider} disconnected successfully" });
+        }
+
+        // ================= REVOKE PERMISSIONS =================
+        [Authorize]
+        [HttpPost("revoke/{provider}")]
+        public async Task<IActionResult> RevokePermissions(string provider)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var acc = await _db.SocialAccounts
+                .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider.ToLower() == provider.ToLower());
+
+            if (acc == null)
+                return NotFound(new { error = $"{provider} account not found" });
+
+            try
+            {
+                if (provider.ToLower() == "facebook" || provider.ToLower() == "instagram")
+                {
+                    await RevokeFacebookPermissions(acc.AccessToken);
+                }
+                else
+                {
+                    return BadRequest(new { error = $"Permission revocation not supported for {provider}" });
+                }
+
+                _logger.LogInformation("{Provider} permissions revoked for user {UserId}", provider, userId);
+                return Ok(new { message = $"{provider} permissions revoked successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error revoking {Provider} permissions for user {UserId}", provider, userId);
+                return StatusCode(500, new { error = "Failed to revoke permissions", details = ex.Message });
+            }
+        }
+
+        private async Task RevokeFacebookPermissions(string accessToken)
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = $"https://graph.facebook.com/v19.0/me/permissions?access_token={accessToken}";
+
+            var response = await client.DeleteAsync(url);
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            _logger.LogInformation("Revoke permissions response: {StatusCode} - {Response}", response.StatusCode, responseString);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"Failed to revoke permissions: {responseString}");
+            }
         }
 
         // ================= PAGES =================
@@ -807,11 +1107,10 @@ namespace Server.Controllers
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
                     acc.LastRefreshedAt = DateTime.UtcNow;
                 }
-                else if (provider.ToLower() == "instagram" && !string.IsNullOrEmpty(acc.RefreshToken))
+                else if (provider.ToLower() == "instagram")
                 {
-                    var newToken = await RefreshInstagramToken(acc.RefreshToken);
+                    var newToken = await RefreshInstagramToken(acc.AccessToken);
                     acc.AccessToken = newToken.AccessToken;
-                    acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                     acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
                     acc.LastRefreshedAt = DateTime.UtcNow;
                 }
@@ -876,22 +1175,24 @@ namespace Server.Controllers
             );
         }
 
-        private async Task<(string AccessToken, string? RefreshToken, int ExpiresIn)> RefreshInstagramToken(string refreshToken)
+        private async Task<(string AccessToken, int ExpiresIn)> RefreshInstagramToken(string accessToken)
         {
             var client = _httpClientFactory.CreateClient();
-            var url = "https://graph.instagram.com/refresh_access_token";
-            var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("grant_type", "ig_refresh_token"),
-                new KeyValuePair<string, string>("client_id", _config["Instagram:ClientId"]),
-                new KeyValuePair<string, string>("client_secret", _config["Instagram:ClientSecret"]),
-                new KeyValuePair<string, string>("refresh_token", refreshToken)
-            });
+            var url = $"https://graph.facebook.com/v19.0/oauth/access_token" +
+                      $"?grant_type=fb_exchange_token" +
+                      $"&client_id={_config["Facebook:ClientId"]}" +
+                      $"&client_secret={_config["Facebook:ClientSecret"]}" +
+                      $"&fb_exchange_token={accessToken}";
 
-            var response = await client.PostAsync(url, content);
-            response.EnsureSuccessStatusCode();
-
+            var response = await client.GetAsync(url);
             var json = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Instagram token refresh failed: {StatusCode} - {Response}", response.StatusCode, json);
+                throw new Exception($"Instagram token refresh failed: {json}");
+            }
+
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
@@ -903,8 +1204,7 @@ namespace Server.Controllers
 
             return (
                 atElem.GetString() ?? throw new Exception("Missing access_token"),
-                root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null,
-                root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 5184000
+                root.TryGetProperty("expires_in", out var expElem) ? expElem.GetInt32() : 5184000
             );
         }
 
@@ -999,19 +1299,21 @@ namespace Server.Controllers
                 else if (acc.Provider == "instagram")
                 {
                     isValid = await IsInstagramTokenValid(acc.AccessToken);
-                    if (!isValid && !string.IsNullOrEmpty(acc.RefreshToken))
+                    if (!isValid)
                     {
                         try
                         {
-                            var newToken = await RefreshInstagramToken(acc.RefreshToken);
+                            var newToken = await RefreshInstagramToken(acc.AccessToken);
                             acc.AccessToken = newToken.AccessToken;
-                            acc.RefreshToken = newToken.RefreshToken ?? acc.RefreshToken;
                             acc.ExpiresAt = DateTime.UtcNow.AddSeconds(newToken.ExpiresIn);
                             acc.LastRefreshedAt = DateTime.UtcNow;
                             isValid = true;
                             wasRefreshed = true;
                         }
-                        catch { }
+                        catch (Exception refreshEx)
+                        {
+                            _logger.LogWarning(refreshEx, "Instagram token refresh failed for user {UserId}", userId);
+                        }
                     }
                 }
                 else if (acc.Provider == "youtube")
@@ -1100,7 +1402,7 @@ namespace Server.Controllers
             {
                 var client = _httpClientFactory.CreateClient();
                 var res = await client.GetAsync(
-                    $"https://graph.instagram.com/me?access_token={accessToken}&fields=id,username");
+                    $"https://graph.facebook.com/v19.0/me?access_token={accessToken}&fields=id,name");
                 return res.IsSuccessStatusCode;
             }
             catch
@@ -1412,7 +1714,7 @@ namespace Server.Controllers
         {
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var plainText = $"{userId}|{timestamp}";
-            var key = _config["Jwt:Key"] ?? "fallback-key-for-state";
+            var key = _config["JwtSettings:Key"] ?? "fallback-key-for-state";
             var bytes = System.Text.Encoding.UTF8.GetBytes(plainText + key);
             var hash = System.Security.Cryptography.SHA256.HashData(bytes);
             var hashPart = Convert.ToBase64String(hash).Replace("+", "-").Replace("/", "_").Replace("=", "");
@@ -1453,7 +1755,7 @@ namespace Server.Controllers
                 }
 
                 var plainText = $"{userId}|{timestamp}";
-                var key = _config["Jwt:Key"] ?? "fallback-key-for-state";
+            var key = _config["JwtSettings:Key"] ?? "fallback-key-for-state";
                 var bytes = System.Text.Encoding.UTF8.GetBytes(plainText + key);
                 var hash = System.Security.Cryptography.SHA256.HashData(bytes);
                 var expectedHash = Convert.ToBase64String(hash).Replace("+", "-").Replace("/", "_").Replace("=", "");

@@ -194,8 +194,7 @@ namespace Server.Services.SocialMedia.Implementations
                     : throw new Exception("TikTok open_id not found");
 
                 var displayName = "TikTok Account";
-                if (data.TryGetProperty("user", out var user) &&
-                    user.TryGetProperty("display_name", out var displayNameElem))
+                if (data.TryGetProperty("display_name", out var displayNameElem))
                 {
                     displayName = displayNameElem.GetString() ?? "TikTok Account";
                 }

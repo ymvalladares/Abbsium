@@ -47,6 +47,10 @@ builder.Services.AddHttpClient("SocialMedia", client =>
     client.Timeout = TimeSpan.FromMinutes(10);
 });
 
+builder.Services.AddScoped<ISocialAuthService, FacebookAuthService>();
+builder.Services.AddScoped<ISocialAuthService, InstagramAuthService>();
+builder.Services.AddScoped<ISocialAuthService, YouTubeAuthService>();
+builder.Services.AddScoped<ISocialAuthService, TikTokAuthService>();
 builder.Services.AddScoped<ISocialPublisher, FacebookPublisher>();
 builder.Services.AddScoped<ISocialPublisher, InstagramPublisher>();
 builder.Services.AddScoped<ISocialPublisher, YouTubePublisher>();
