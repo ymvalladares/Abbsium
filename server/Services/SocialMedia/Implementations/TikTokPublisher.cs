@@ -399,21 +399,18 @@ namespace Server.Services.SocialMedia.Implementations
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                if (root.TryGetProperty("data", out var data))
+                if (root.TryGetProperty("access_token", out var at))
                 {
-                    if (data.TryGetProperty("access_token", out var at))
+                    acc.AccessToken = at.GetString()!;
+                    acc.ExpiresAt = DateTime.UtcNow.AddSeconds(
+                        root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400
+                    );
+                    if (root.TryGetProperty("refresh_token", out var rt) && rt.GetString() is string newRt)
                     {
-                        acc.AccessToken = at.GetString()!;
-                        acc.ExpiresAt = DateTime.UtcNow.AddSeconds(
-                            data.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400
-                        );
-                        if (data.TryGetProperty("refresh_token", out var rt) && rt.GetString() is string newRt)
-                        {
-                            acc.RefreshToken = newRt;
-                        }
-                        await _db.SaveChangesAsync();
-                        _logger.LogInformation("TikTok token refreshed for account {AccountId}", acc.Id);
+                        acc.RefreshToken = newRt;
                     }
+                    await _db.SaveChangesAsync();
+                    _logger.LogInformation("TikTok token refreshed for account {AccountId}", acc.Id);
                 }
             }
             catch (Exception ex)

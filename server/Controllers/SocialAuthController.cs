@@ -881,25 +881,20 @@ namespace Server.Controllers
             using var doc = JsonDocument.Parse(jsonString);
             var root = doc.RootElement;
 
-            if (root.TryGetProperty("data", out var data))
-            {
-                var accessToken = data.TryGetProperty("access_token", out var atElem)
-                    ? atElem.GetString() ?? throw new Exception("Missing access_token")
-                    : throw new Exception($"TikTok token response missing access_token: {jsonString}");
+            var accessToken = root.TryGetProperty("access_token", out var atElem)
+                ? atElem.GetString() ?? throw new Exception("Missing access_token")
+                : throw new Exception($"TikTok token response missing access_token: {jsonString}");
 
-                var expiresIn = data.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
-                var refreshToken = data.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+            var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
+            var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
 
-                return (accessToken, refreshToken, expiresIn);
-            }
-
-            throw new Exception($"TikTok token response invalid: {jsonString}");
+            return (accessToken, refreshToken, expiresIn);
         }
 
         private async Task<(string OpenId, string DisplayName)> GetTikTokUserInfo(string accessToken)
         {
             var client = _httpClientFactory.CreateClient();
-            var url = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name";
+            var url = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url";
 
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
@@ -918,9 +913,14 @@ namespace Server.Controllers
                     : throw new Exception("TikTok open_id not found");
 
                 var displayName = "TikTok Account";
-                if (data.TryGetProperty("display_name", out var displayNameElem))
+                if (data.TryGetProperty("user", out var user) &&
+                    user.TryGetProperty("display_name", out var displayNameElem))
                 {
                     displayName = displayNameElem.GetString() ?? "TikTok Account";
+                }
+                else if (data.TryGetProperty("display_name", out var displayNameElem2))
+                {
+                    displayName = displayNameElem2.GetString() ?? "TikTok Account";
                 }
 
                 return (openId, displayName);

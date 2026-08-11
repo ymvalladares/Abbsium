@@ -192,20 +192,17 @@ namespace Server.Services
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (root.TryGetProperty("data", out var data))
+            if (root.TryGetProperty("access_token", out var atElem))
             {
-                if (data.TryGetProperty("access_token", out var atElem))
+                acc.AccessToken = atElem.GetString()!;
+                acc.ExpiresAt = DateTime.UtcNow.AddSeconds(
+                    root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400
+                );
+                if (root.TryGetProperty("refresh_token", out var rt) && rt.GetString() is string newRt)
                 {
-                    acc.AccessToken = atElem.GetString()!;
-                    acc.ExpiresAt = DateTime.UtcNow.AddSeconds(
-                        data.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400
-                    );
-                    if (data.TryGetProperty("refresh_token", out var rt) && rt.GetString() is string newRt)
-                    {
-                        acc.RefreshToken = newRt;
-                    }
-                    return true;
+                    acc.RefreshToken = newRt;
                 }
+                return true;
             }
 
             return false;

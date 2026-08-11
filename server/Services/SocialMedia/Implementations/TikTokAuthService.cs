@@ -157,19 +157,14 @@ namespace Server.Services.SocialMedia.Implementations
             using var doc = JsonDocument.Parse(jsonString);
             var root = doc.RootElement;
 
-            if (root.TryGetProperty("data", out var data))
-            {
-                var accessToken = data.TryGetProperty("access_token", out var atElem)
-                    ? atElem.GetString() ?? throw new Exception("Missing access_token")
-                    : throw new Exception($"TikTok token response missing access_token: {jsonString}");
+            var accessToken = root.TryGetProperty("access_token", out var atElem)
+                ? atElem.GetString() ?? throw new Exception("Missing access_token")
+                : throw new Exception($"TikTok token response missing access_token: {jsonString}");
 
-                var expiresIn = data.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
-                var refreshToken = data.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+            var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
+            var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
 
-                return (accessToken, refreshToken, expiresIn);
-            }
-
-            throw new Exception($"TikTok token response invalid: {jsonString}");
+            return (accessToken, refreshToken, expiresIn);
         }
 
         private async Task<(string OpenId, string DisplayName)> GetUserInfo(string accessToken)
@@ -224,19 +219,14 @@ namespace Server.Services.SocialMedia.Implementations
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (root.TryGetProperty("data", out var data))
-            {
-                var accessToken = data.TryGetProperty("access_token", out var atElem)
-                    ? atElem.GetString() ?? throw new Exception("Missing access_token")
-                    : throw new Exception($"TikTok token refresh failed: {json}");
+            var accessToken = root.TryGetProperty("access_token", out var atElem)
+                ? atElem.GetString() ?? throw new Exception("Missing access_token")
+                : throw new Exception($"TikTok token refresh failed: {json}");
 
-                var expiresIn = data.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
-                var newRefreshToken = data.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+            var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
+            var newRefreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
 
-                return (accessToken, newRefreshToken, expiresIn);
-            }
-
-            throw new Exception($"TikTok token refresh response invalid: {json}");
+            return (accessToken, newRefreshToken, expiresIn);
         }
     }
 }
