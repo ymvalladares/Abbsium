@@ -816,7 +816,7 @@ namespace Server.Controllers
             try
             {
                 var tokenResponse = await ExchangeTikTokCode(code);
-                var (openId, displayName) = await GetTikTokUserInfo(tokenResponse.AccessToken);
+                var displayName = await GetTikTokDisplayName(tokenResponse.AccessToken);
 
                 var existingAccount = await _db.SocialAccounts
                     .FirstOrDefaultAsync(x => x.UserId == userId && x.Provider == "tiktok");
@@ -828,7 +828,7 @@ namespace Server.Controllers
                     existingAccount.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
                     existingAccount.Scope = "user.info.basic,video.upload,video.publish";
                     existingAccount.IsActive = true;
-                    existingAccount.ProviderAccountId = openId;
+                    existingAccount.ProviderAccountId = tokenResponse.OpenId;
                     existingAccount.AccountName = displayName;
                     existingAccount.LastRefreshedAt = DateTime.UtcNow;
                 }
@@ -843,7 +843,7 @@ namespace Server.Controllers
                         ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
                         Scope = "user.info.basic,video.upload,video.publish",
                         IsActive = true,
-                        ProviderAccountId = openId,
+                        ProviderAccountId = tokenResponse.OpenId,
                         AccountName = displayName,
                         LastRefreshedAt = DateTime.UtcNow
                     });
@@ -861,7 +861,7 @@ namespace Server.Controllers
             }
         }
 
-        private async Task<(string AccessToken, string? RefreshToken, int ExpiresIn)> ExchangeTikTokCode(string code)
+        private async Task<(string AccessToken, string? RefreshToken, int ExpiresIn, string OpenId)> ExchangeTikTokCode(string code)
         {
             var client = _httpClientFactory.CreateClient();
             var url = "https://open.tiktokapis.com/v2/oauth/token/";
@@ -887,46 +887,55 @@ namespace Server.Controllers
 
             var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 86400;
             var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+            var openId = root.TryGetProperty("open_id", out var openIdElem)
+                ? openIdElem.GetString() ?? throw new Exception("Missing open_id")
+                : throw new Exception($"TikTok token response missing open_id: {jsonString}");
 
-            return (accessToken, refreshToken, expiresIn);
+            return (accessToken, refreshToken, expiresIn, openId);
         }
 
-        private async Task<(string OpenId, string DisplayName)> GetTikTokUserInfo(string accessToken)
+        private async Task<string> GetTikTokDisplayName(string accessToken)
         {
-            var client = _httpClientFactory.CreateClient();
-            var url = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url";
-
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
-
-            var response = await client.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
-            var jsonString = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(jsonString);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("data", out var data))
+            try
             {
-                var openId = data.TryGetProperty("open_id", out var openIdElem)
-                    ? openIdElem.GetString() ?? throw new Exception("Missing TikTok open_id")
-                    : throw new Exception("TikTok open_id not found");
+                var client = _httpClientFactory.CreateClient();
+                var url = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url";
 
-                var displayName = "TikTok Account";
-                if (data.TryGetProperty("user", out var user) &&
-                    user.TryGetProperty("display_name", out var displayNameElem))
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                var response = await client.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    displayName = displayNameElem.GetString() ?? "TikTok Account";
-                }
-                else if (data.TryGetProperty("display_name", out var displayNameElem2))
-                {
-                    displayName = displayNameElem2.GetString() ?? "TikTok Account";
+                    _logger.LogWarning("TikTok user info request failed: {StatusCode}", response.StatusCode);
+                    return "TikTok Account";
                 }
 
-                return (openId, displayName);
+                var jsonString = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(jsonString);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("data", out var data))
+                {
+                    if (data.TryGetProperty("user", out var user) &&
+                        user.TryGetProperty("display_name", out var displayNameElem))
+                    {
+                        return displayNameElem.GetString() ?? "TikTok Account";
+                    }
+
+                    if (data.TryGetProperty("display_name", out var displayNameElem2))
+                    {
+                        return displayNameElem2.GetString() ?? "TikTok Account";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error getting TikTok display name");
             }
 
-            throw new Exception("Failed to get TikTok user info");
+            return "TikTok Account";
         }
 
         // ================= STATUS =================
