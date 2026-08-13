@@ -38,6 +38,7 @@ builder.Services.AddScoped<ITokenService, Server.Services.TokenService>();
 builder.Services.AddScoped<IChatService, Server.Services.ChatService>();
 builder.Services.AddScoped<IEmailSender, EmailService>();
 builder.Services.AddScoped<IS3Service, S3Service>();
+builder.Services.AddScoped<IClippingService, ClippingService>();
 
 
 builder.Services.AddHttpClient();
@@ -136,7 +137,7 @@ builder.Services.AddAuthentication(options =>
             var path = context.HttpContext.Request.Path;
 
             if (!string.IsNullOrEmpty(accessToken) &&
-                (path.StartsWithSegments("/hubs/chat") || path.StartsWithSegments("/hubs/publishing")))
+                (path.StartsWithSegments("/hubs/chat") || path.StartsWithSegments("/hubs/publishing") || path.StartsWithSegments("/hubs/clipping")))
             {
                 context.Token = accessToken;
             }
@@ -252,6 +253,9 @@ app.MapHub<ChatHub>("/hubs/chat")
    .RequireCors("CorsPolicy");
 
 app.MapHub<PublishingHub>("/hubs/publishing")
+   .RequireCors("CorsPolicy");
+
+app.MapHub<ClippingHub>("/hubs/clipping")
    .RequireCors("CorsPolicy");
 
 app.Run();

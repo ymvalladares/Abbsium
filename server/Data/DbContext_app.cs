@@ -39,5 +39,9 @@ namespace Server.Data
 
         public DbSet<SiteSettings> SiteSettings { get; set; }
 
+        public DbSet<ClipJob> ClipJobs { get; set; }
+
+        public DbSet<VideoClip> VideoClips { get; set; }
+
     }
 }

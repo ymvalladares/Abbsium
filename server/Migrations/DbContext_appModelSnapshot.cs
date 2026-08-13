@@ -411,6 +411,61 @@ namespace Server.Migrations
                     b.ToTable("CarPhotos");
                 });
 
+            modelBuilder.Entity("Server.Entitys.ClipJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("AssemblyTranscriptId")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("LocalVideoPath")
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("MaxClipDuration")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MaxClips")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinClipDuration")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Progress")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<string>("VideoTitle")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("VideoUrl")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ClipJobs");
+                });
+
             modelBuilder.Entity("Server.Entitys.Dealer", b =>
                 {
                     b.Property<Guid>("Id")
@@ -892,6 +947,53 @@ namespace Server.Migrations
                     b.ToTable("SocialAccounts");
                 });
 
+            modelBuilder.Entity("Server.Entitys.VideoClip", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("ClipJobId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("DurationSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EndTimeSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<double?>("EngagementScore")
+                        .HasColumnType("double");
+
+                    b.Property<string>("S3Key")
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("StartTimeSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ThumbnailS3Key")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Transcript")
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClipJobId");
+
+                    b.ToTable("VideoClips");
+                });
+
             modelBuilder.Entity("Server.Entitys.User_data", b =>
                 {
                     b.HasBaseType("Microsoft.AspNetCore.Identity.IdentityUser");
@@ -1019,6 +1121,17 @@ namespace Server.Migrations
                     b.Navigation("Car");
                 });
 
+            modelBuilder.Entity("Server.Entitys.ClipJob", b =>
+                {
+                    b.HasOne("Server.Entitys.User_data", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Server.Entitys.Order", b =>
                 {
                     b.HasOne("Server.Entitys.Dealer", "Dealer")
@@ -1102,6 +1215,17 @@ namespace Server.Migrations
                     b.Navigation("User_data");
                 });
 
+            modelBuilder.Entity("Server.Entitys.VideoClip", b =>
+                {
+                    b.HasOne("Server.Entitys.ClipJob", "ClipJob")
+                        .WithMany("Clips")
+                        .HasForeignKey("ClipJobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ClipJob");
+                });
+
             modelBuilder.Entity("Server.Chat.Entitys.Conversation", b =>
                 {
                     b.Navigation("Messages");
@@ -1110,6 +1234,11 @@ namespace Server.Migrations
             modelBuilder.Entity("Server.Entitys.Car", b =>
                 {
                     b.Navigation("Photos");
+                });
+
+            modelBuilder.Entity("Server.Entitys.ClipJob", b =>
+                {
+                    b.Navigation("Clips");
                 });
 
             modelBuilder.Entity("Server.Entitys.Dealer", b =>
