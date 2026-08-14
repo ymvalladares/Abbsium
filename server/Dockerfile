@@ -16,4 +16,13 @@ FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
+# Install ffmpeg, yt-dlp and deno (needed for clip generation)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl libicu unzip \
+ && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+ && chmod a+rx /usr/local/bin/yt-dlp \
+ && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
 ENTRYPOINT ["dotnet", "Server.dll"]
