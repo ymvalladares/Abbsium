@@ -1,10 +1,10 @@
 ﻿# Stage 1: Runtime base
-FROM mcr.microsoft.com/dotnet/aspnet:6.0-bookworm-slim AS base
+FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy AS base
 WORKDIR /app
 EXPOSE 80
 
 # Stage 2: Build
-FROM mcr.microsoft.com/dotnet/sdk:6.0-bookworm AS build
+FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy AS build
 WORKDIR /src
 
 COPY . .                             
