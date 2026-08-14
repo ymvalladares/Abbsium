@@ -3,3 +3,4 @@ bin/
 obj/
 client/
 .vscode/
+appsettings.Development.json
