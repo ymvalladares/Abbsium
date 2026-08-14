@@ -24,12 +24,17 @@ RUN apt-get update \
       ca-certificates \
       curl \
       unzip \
+      python3 \
  && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
       -o /usr/local/bin/yt-dlp \
  && chmod +x /usr/local/bin/yt-dlp \
  && curl -fsSL https://deno.land/install.sh \
       | DENO_INSTALL=/usr/local sh \
  && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && python3 --version \
+ && yt-dlp --version \
+ && ffmpeg -version | head -n 1 \
+ && deno --version
 
 ENTRYPOINT ["dotnet", "Server.dll"]
