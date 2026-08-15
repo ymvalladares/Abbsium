@@ -18,7 +18,7 @@ namespace Server.Services
             {
                 FullMode = BoundedChannelFullMode.Wait,
                 SingleWriter = true,
-                SingleReader = true
+                SingleReader = false
             };
             _queue = Channel.CreateBounded<Func<IServiceProvider, CancellationToken, Task>>(options);
         }

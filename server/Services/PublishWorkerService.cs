@@ -5,6 +5,8 @@ namespace Server.Services
 {
     public class PublishWorkerService : BackgroundService
     {
+        private const int WorkerCount = 3;
+
         private readonly IServiceProvider _serviceProvider;
         private readonly IBackgroundPublishQueue _queue;
         private readonly ILogger<PublishWorkerService> _logger;
@@ -20,6 +22,17 @@ namespace Server.Services
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            var workers = new List<Task>();
+            for (int i = 0; i < WorkerCount; i++)
+            {
+                workers.Add(Task.Run(() => ProcessQueueAsync(stoppingToken)));
+            }
+
+            await Task.WhenAll(workers);
+        }
+
+        private async Task ProcessQueueAsync(CancellationToken stoppingToken)
         {
             while (!stoppingToken.IsCancellationRequested)
             {

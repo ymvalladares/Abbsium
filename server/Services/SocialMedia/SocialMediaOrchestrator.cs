@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Server.Chat.HubFolder;
 using Server.Models.SocialMedia.Enums;
@@ -17,16 +18,16 @@ namespace Server.Services.SocialMedia
 
     public class SocialMediaOrchestrator : ISocialMediaOrchestrator
     {
-        private readonly IEnumerable<ISocialPublisher> _publishers;
+        private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<SocialMediaOrchestrator> _logger;
         private readonly IHubContext<PublishingHub> _hubContext;
 
         public SocialMediaOrchestrator(
-            IEnumerable<ISocialPublisher> publishers,
+            IServiceScopeFactory scopeFactory,
             ILogger<SocialMediaOrchestrator> logger,
             IHubContext<PublishingHub> hubContext)
         {
-            _publishers = publishers;
+            _scopeFactory = scopeFactory;
             _logger = logger;
             _hubContext = hubContext;
         }
@@ -41,10 +42,8 @@ namespace Server.Services.SocialMedia
                 totalPlatforms = request.Platforms.Count
             });
 
-            var tasks = request.Platforms.Select(async platform =>
-            {
-                return await PublishToSinglePlatformAsync(userId, platform, request, sessionId);
-            });
+            var tasks = request.Platforms.Select(platform =>
+                PublishToSinglePlatformAsync(userId, platform, request, sessionId));
 
             var results = await Task.WhenAll(tasks);
             result.Results.AddRange(results);
@@ -66,7 +65,11 @@ namespace Server.Services.SocialMedia
 
         public async Task<SocialPostResult> PublishToSinglePlatformAsync(string userId, SocialPlatform platform, SocialPostRequest request, string? sessionId = null)
         {
-            var publisher = _publishers.FirstOrDefault(p => p.Platform == platform);
+            using var scope = _scopeFactory.CreateScope();
+
+            var publisher = scope.ServiceProvider.GetServices<ISocialPublisher>()
+                .FirstOrDefault(p => p.Platform == platform);
+
             if (publisher == null)
             {
                 return new SocialPostResult

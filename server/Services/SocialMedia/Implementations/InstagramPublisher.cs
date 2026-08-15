@@ -327,7 +327,10 @@ namespace Server.Services.SocialMedia.Implementations
 
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
-                await Task.Delay(delayMs);
+                if (attempt > 0)
+                {
+                    await Task.Delay(delayMs);
+                }
 
                 var url = $"https://graph.facebook.com/v19.0/{containerId}?fields=status_code&access_token={accessToken}";
                 var response = await client.GetAsync(url);

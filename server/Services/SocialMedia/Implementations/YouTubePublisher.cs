@@ -64,18 +64,16 @@ namespace Server.Services.SocialMedia.Implementations
                     await RefreshYouTubeAccessToken(acc);
                 }
 
-                var videoBytes = request.VideoUrl.StartsWith("data:")
-                    ? ExtractBase64Media(request.VideoUrl)
-                    : await DownloadMediaAsync(request.VideoUrl);
+                var title = request.Title ?? request.Caption ?? "";
+                var description = request.Caption ?? request.Title ?? "";
 
-                _logger.LogInformation("Uploading video to YouTube: {Size} bytes", videoBytes.Length);
+                _logger.LogInformation("Uploading video to YouTube: {Url}", request.VideoUrl.Substring(0, Math.Min(request.VideoUrl.Length, 120)));
 
-                var (videoId, errorMessage) = await UploadVideoToYouTube(
-                    acc.AccessToken,
-                    videoBytes,
-                    request.Title ?? request.Caption ?? "",
-                    request.Caption ?? request.Title ?? "",
-                    request.IsShort);
+                var (videoId, errorMessage) = request.VideoUrl.StartsWith("data:")
+                    ? await UploadVideoToYouTube(acc.AccessToken, title, description, request.IsShort,
+                        videoBytes: ExtractBase64Media(request.VideoUrl))
+                    : await UploadVideoToYouTube(acc.AccessToken, title, description, request.IsShort,
+                        videoUrl: request.VideoUrl);
 
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
@@ -96,11 +94,11 @@ namespace Server.Services.SocialMedia.Implementations
             }
         }
 
-        private async Task<(string? VideoId, string? ErrorMessage)> UploadVideoToYouTube(string accessToken, byte[] videoBytes, string title, string description, bool isShort)
+        private async Task<(string? VideoId, string? ErrorMessage)> UploadVideoToYouTube(
+            string accessToken, string title, string description, bool isShort,
+            string? videoUrl = null, byte[]? videoBytes = null)
         {
             var client = _httpClientFactory.CreateClient("SocialMedia");
-
-            var boundary = "==================" + DateTime.Now.Ticks.ToString("x") + "==";
 
             var metadata = new
             {
@@ -118,51 +116,105 @@ namespace Server.Services.SocialMedia.Implementations
             };
 
             var metadataJson = JsonSerializer.Serialize(metadata);
-            var metadataBytes = System.Text.Encoding.UTF8.GetBytes(metadataJson);
 
-            var body = new List<byte>();
-
-            body.AddRange(System.Text.Encoding.UTF8.GetBytes($"--{boundary}\r\n"));
-            body.AddRange(System.Text.Encoding.UTF8.GetBytes("Content-Type: application/json; charset=UTF-8\r\n\r\n"));
-            body.AddRange(metadataBytes);
-            body.AddRange(System.Text.Encoding.UTF8.GetBytes("\r\n"));
-
-            body.AddRange(System.Text.Encoding.UTF8.GetBytes($"--{boundary}\r\n"));
-            body.AddRange(System.Text.Encoding.UTF8.GetBytes("Content-Type: video/*\r\n\r\n"));
-            body.AddRange(videoBytes);
-            body.AddRange(System.Text.Encoding.UTF8.GetBytes("\r\n"));
-            body.AddRange(System.Text.Encoding.UTF8.GetBytes($"--{boundary}--\r\n"));
-
-            var content = new ByteArrayContent(body.ToArray());
-            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("multipart/related");
-            content.Headers.ContentType.Parameters.Add(new System.Net.Http.Headers.NameValueHeaderValue("boundary", $"\"{boundary}\""));
-
-            var url = "https://www.googleapis.com/upload/youtube/v3/videos?part=snippet&part=status&uploadType=multipart";
-            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            var initUrl = "https://www.googleapis.com/upload/youtube/v3/videos?part=snippet&part=status&uploadType=resumable";
+            var initRequest = new HttpRequestMessage(HttpMethod.Post, initUrl)
             {
-                Content = content
+                Content = new StringContent(metadataJson, System.Text.Encoding.UTF8, "application/json")
             };
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+            initRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
 
-            var response = await client.SendAsync(request);
-            var responseString = await response.Content.ReadAsStringAsync();
+            var initResponse = await client.SendAsync(initRequest);
 
-            if (!response.IsSuccessStatusCode)
+            if (!initResponse.IsSuccessStatusCode)
             {
-                _logger.LogWarning("YouTube upload failed: {StatusCode} {Response}", response.StatusCode, responseString);
-                var mapped = SocialErrorMapper.MapYouTubeError(responseString, out var userAction);
+                var initError = await initResponse.Content.ReadAsStringAsync();
+                _logger.LogWarning("YouTube resumable init failed: {StatusCode} {Response}", initResponse.StatusCode, initError);
+                var mapped = SocialErrorMapper.MapYouTubeError(initError, out var userAction);
                 return (null, $"{mapped}: {userAction}");
             }
 
-            using var doc = JsonDocument.Parse(responseString);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("id", out var idElem))
+            var uploadUrl = initResponse.Headers.Location?.ToString();
+            if (string.IsNullOrEmpty(uploadUrl))
             {
-                return (idElem.GetString(), null);
+                return (null, "YouTube did not return an upload session URL");
             }
 
-            return (null, "Error uploading the video to YouTube. Please ensure it is MP4 and under 256GB.");
+            HttpResponseMessage? mediaResponse = null;
+            HttpContent uploadContent;
+            long? contentLength = null;
+
+            try
+            {
+                if (videoBytes != null)
+                {
+                    uploadContent = new ByteArrayContent(videoBytes);
+                    contentLength = videoBytes.Length;
+                    _logger.LogInformation("Uploading video to YouTube: {Size} bytes", videoBytes.Length);
+                }
+                else
+                {
+                    mediaResponse = await client.GetAsync(videoUrl, HttpCompletionOption.ResponseHeadersRead);
+
+                    if (!mediaResponse.IsSuccessStatusCode)
+                    {
+                        var mediaError = await mediaResponse.Content.ReadAsStringAsync();
+                        _logger.LogError("Failed to download media for YouTube upload: {StatusCode} - {Content}",
+                            mediaResponse.StatusCode, mediaError);
+                        return (null, $"Failed to download video from storage: {mediaResponse.StatusCode}");
+                    }
+
+                    contentLength = mediaResponse.Content.Headers.ContentLength;
+
+                    if (contentLength.HasValue)
+                    {
+                        uploadContent = new StreamContent(await mediaResponse.Content.ReadAsStreamAsync());
+                        _logger.LogInformation("Uploading video to YouTube (streaming): {Size} bytes", contentLength.Value);
+                    }
+                    else
+                    {
+                        var bytes = await mediaResponse.Content.ReadAsByteArrayAsync();
+                        uploadContent = new ByteArrayContent(bytes);
+                        contentLength = bytes.Length;
+                        _logger.LogInformation("Uploading video to YouTube (buffered): {Size} bytes", bytes.Length);
+                    }
+                }
+
+                var uploadRequest = new HttpRequestMessage(HttpMethod.Put, uploadUrl)
+                {
+                    Content = uploadContent
+                };
+                uploadRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                uploadRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("video/*");
+                if (contentLength.HasValue)
+                {
+                    uploadRequest.Content.Headers.ContentLength = contentLength.Value;
+                }
+
+                var response = await client.SendAsync(uploadRequest);
+                var responseString = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("YouTube upload failed: {StatusCode} {Response}", response.StatusCode, responseString);
+                    var mapped = SocialErrorMapper.MapYouTubeError(responseString, out var userAction);
+                    return (null, $"{mapped}: {userAction}");
+                }
+
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("id", out var idElem))
+                {
+                    return (idElem.GetString(), null);
+                }
+
+                return (null, "Error uploading the video to YouTube. Please ensure it is MP4 and under 256GB.");
+            }
+            finally
+            {
+                mediaResponse?.Dispose();
+            }
         }
 
         private async Task RefreshYouTubeAccessToken(Entitys.SocialAccount acc)

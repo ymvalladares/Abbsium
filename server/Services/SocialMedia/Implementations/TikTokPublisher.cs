@@ -65,23 +65,39 @@ namespace Server.Services.SocialMedia.Implementations
                     await RefreshTikTokAccessToken(acc);
                 }
 
-                var videoBytes = request.VideoUrl.StartsWith("data:")
-                    ? ExtractBase64Media(request.VideoUrl)
-                    : await DownloadMediaAsync(request.VideoUrl);
-
-                _logger.LogInformation("Uploading video to TikTok: {Size} bytes", videoBytes.Length);
-
                 var caption = request.Caption ?? request.Title ?? "";
 
-                var (publishId, errorMessage) = await UploadVideoToTikTok(
-                    acc.AccessToken,
-                    videoBytes,
-                    caption,
-                    request.IsShort);
+                string? publishId = null;
+                string? errorMessage = null;
 
-                if (!string.IsNullOrEmpty(errorMessage))
+                if (request.VideoUrl.StartsWith("http"))
                 {
-                    result.ErrorMessage = errorMessage;
+                    (publishId, errorMessage) = await PublishFromUrlAsync(acc.AccessToken, request.VideoUrl, caption, request.IsShort);
+
+                    if (string.IsNullOrEmpty(publishId))
+                    {
+                        _logger.LogWarning("TikTok PULL_FROM_URL failed ({Error}), falling back to file upload", errorMessage);
+                    }
+                }
+
+                if (string.IsNullOrEmpty(publishId))
+                {
+                    var videoBytes = request.VideoUrl.StartsWith("data:")
+                        ? ExtractBase64Media(request.VideoUrl)
+                        : await DownloadMediaAsync(request.VideoUrl);
+
+                    _logger.LogInformation("Uploading video to TikTok: {Size} bytes", videoBytes.Length);
+
+                    (publishId, errorMessage) = await UploadVideoToTikTok(
+                        acc.AccessToken,
+                        videoBytes,
+                        caption,
+                        request.IsShort);
+                }
+
+                if (string.IsNullOrEmpty(publishId))
+                {
+                    result.ErrorMessage = errorMessage ?? "Error uploading the video to TikTok. Please ensure it is MP4 format and under 10 minutes.";
                     return result;
                 }
 
@@ -131,6 +147,70 @@ namespace Server.Services.SocialMedia.Implementations
             }
 
             return (publishId, null);
+        }
+
+        private async Task<(string? PublishId, string? ErrorMessage)> PublishFromUrlAsync(string accessToken, string videoUrl, string description, bool isShort)
+        {
+            var client = _httpClientFactory.CreateClient("SocialMedia");
+            var url = "https://open.tiktokapis.com/v2/post/publish/content/init/";
+
+            var body = new
+            {
+                post_info = new
+                {
+                    title = description,
+                    privacy_level = "PUBLIC",
+                    disable_comment = false,
+                    disable_duet = false,
+                    disable_stitch = false,
+                    video_cover_timestamp_ms = 1000
+                },
+                source_info = new
+                {
+                    source = "PULL_FROM_URL",
+                    video_url = videoUrl
+                }
+            };
+
+            var json = JsonSerializer.Serialize(body);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = content
+            };
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            var response = await client.SendAsync(request);
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("TikTok URL upload init failed: {StatusCode} {Response}", response.StatusCode, responseString);
+                return (null, $"TikTok URL upload init failed: {response.StatusCode}");
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("data", out var data) &&
+                    data.TryGetProperty("publish_id", out var publishIdElem))
+                {
+                    var publishId = publishIdElem.GetString();
+                    _logger.LogInformation("TikTok URL upload initiated with publish_id: {PublishId}", publishId);
+                    return (publishId, null);
+                }
+
+                _logger.LogWarning("TikTok URL init response missing publish_id: {Response}", responseString);
+                return (null, "TikTok URL upload init missing publish_id");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing TikTok URL init response: {Response}", responseString);
+                return (null, "Error parsing TikTok URL init response");
+            }
         }
 
         private async Task<string?> InitiateUpload(HttpClient client, string accessToken, long videoSize, string description, bool isShort)
@@ -275,7 +355,10 @@ namespace Server.Services.SocialMedia.Implementations
 
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
-                await Task.Delay(delayMs);
+                if (attempt > 0)
+                {
+                    await Task.Delay(delayMs);
+                }
 
                 var url = "https://open.tiktokapis.com/v2/post/publish/status/fetch/";
 
