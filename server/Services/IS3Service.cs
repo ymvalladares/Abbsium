@@ -14,6 +14,7 @@ namespace Server.Services
         Task<int> DeleteDealerPhotosAsync(Guid dealerId);
         Task<int> DeleteCarPhotosAsync(Guid dealerId, int carId);
         string GetCarPhotoPublicUrl(string s3Key);
+        Task<bool> UploadFileAsync(string key, string filePath, string contentType, CancellationToken cancellationToken = default);
     }
 
     public class S3ObjectSummary

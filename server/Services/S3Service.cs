@@ -334,6 +334,37 @@ namespace Server.Services
             return GetPublicUrl(s3Key);
         }
 
+        public async Task<bool> UploadFileAsync(string key, string filePath, string contentType, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                if (!File.Exists(filePath))
+                {
+                    _logger.LogWarning("File not found for S3 upload: {FilePath}", filePath);
+                    return false;
+                }
+
+                using var fileStream = File.OpenRead(filePath);
+                var request = new PutObjectRequest
+                {
+                    BucketName = _bucketName,
+                    Key = key.TrimStart('/'),
+                    InputStream = fileStream,
+                    ContentType = contentType,
+                    CannedACL = S3CannedACL.PublicRead
+                };
+
+                await _s3Client.PutObjectAsync(request, cancellationToken);
+                _logger.LogInformation("Uploaded file to S3: {Key} ({Size} bytes, {ContentType})", key, new FileInfo(filePath).Length, contentType);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to upload file to S3: {Key}", key);
+                return false;
+            }
+        }
+
         public async Task<List<S3ObjectSummary>> ListObjectsByPrefixAsync(string prefix)
         {
             var objects = new List<S3ObjectSummary>();

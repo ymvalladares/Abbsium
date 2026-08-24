@@ -12,5 +12,7 @@ namespace Server.ModelDTO
         public int? MinClipDuration { get; set; }
 
         public int? MaxClipDuration { get; set; }
+
+        public string? AspectRatio { get; set; } = "9:16";
     }
 }

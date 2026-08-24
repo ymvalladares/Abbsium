@@ -37,7 +37,8 @@ namespace Server.Controllers
                 request.VideoUrl,
                 request.MaxClips ?? 5,
                 request.MinClipDuration ?? 30,
-                request.MaxClipDuration ?? 60
+                request.MaxClipDuration ?? 60,
+                request.AspectRatio
             );
 
             return Ok(new
@@ -77,6 +78,9 @@ namespace Server.Controllers
                         c.DurationSeconds,
                         c.EngagementScore,
                         c.CreatedAt,
+                        c.Hashtags,
+                        c.HookText,
+                        c.BestTimeToPost,
                         VideoUrl = !string.IsNullOrEmpty(c.S3Key) ? $"{backendUrl}{c.S3Key}" : null,
                         ThumbnailUrl = !string.IsNullOrEmpty(c.ThumbnailS3Key) ? $"{backendUrl}{c.ThumbnailS3Key}" : null
                     });
@@ -90,6 +94,7 @@ namespace Server.Controllers
                     j.Status,
                     j.ErrorMessage,
                     j.MaxClips,
+                    j.AspectRatio,
                     j.CreatedAt,
                     j.CompletedAt,
                     ClipCount = j.Clips.Count,
@@ -128,6 +133,9 @@ namespace Server.Controllers
                     c.DurationSeconds,
                     c.EngagementScore,
                     c.CreatedAt,
+                    c.Hashtags,
+                    c.HookText,
+                    c.BestTimeToPost,
                     VideoUrl = !string.IsNullOrEmpty(c.S3Key) ? $"{backendUrl}{c.S3Key}" : null,
                     ThumbnailUrl = !string.IsNullOrEmpty(c.ThumbnailS3Key) ? $"{backendUrl}{c.ThumbnailS3Key}" : null
                 });
@@ -141,6 +149,7 @@ namespace Server.Controllers
                 job.Status,
                 job.ErrorMessage,
                 job.MaxClips,
+                job.AspectRatio,
                 job.CreatedAt,
                 job.CompletedAt,
                 Clips = clipsResult

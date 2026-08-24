@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Server.Entitys;
 using Server.Repositories.IRepositories;
@@ -6,9 +7,8 @@ using System.Text.Json;
 
 namespace Server.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class StripeWebhookController : ControllerBase
+    [Authorize]
+    public class StripeWebhookController : Base_Control_Api
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<StripeWebhookController> _logger;
@@ -34,7 +34,7 @@ namespace Server.Controllers
                     _config["Stripe:WebhookSecret"]
                 );
 
-                _logger.LogInformation("Stripe event received: {EventType}", stripeEvent.Type);
+                _logger.LogInformation("[Stripe] Event received: {EventType} | ID: {EventId}", stripeEvent.Type, stripeEvent.Id);
 
                 switch (stripeEvent.Type)
                 {
@@ -63,7 +63,7 @@ namespace Server.Controllers
                         break;
 
                     default:
-                        _logger.LogWarning("Unhandled Stripe event: {EventType}", stripeEvent.Type);
+                        _logger.LogWarning("[Stripe] Unhandled event: {EventType}", stripeEvent.Type);
                         break;
                 }
 
@@ -71,12 +71,12 @@ namespace Server.Controllers
             }
             catch (StripeException ex)
             {
-                _logger.LogError(ex, "Stripe webhook error");
+                _logger.LogError(ex, "[Stripe] Webhook signature/parse error");
                 return BadRequest();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Webhook processing error");
+                _logger.LogError(ex, "[Stripe] Webhook processing error");
                 return StatusCode(500);
             }
         }
@@ -87,10 +87,50 @@ namespace Server.Controllers
             {
                 using var doc = JsonDocument.Parse(json);
                 var obj = doc.RootElement.GetProperty("data").GetProperty("object");
-                if (obj.TryGetProperty("subscription", out var subProp) && subProp.ValueKind == JsonValueKind.String)
-                    return subProp.GetString();
+
+                if (obj.TryGetProperty("subscription", out var subProp))
+                {
+                    if (subProp.ValueKind == JsonValueKind.String)
+                        return subProp.GetString();
+
+                    if (subProp.ValueKind == JsonValueKind.Object && subProp.TryGetProperty("id", out var subId))
+                        return subId.GetString();
+                }
+
                 if (obj.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
                     return idProp.GetString();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Stripe] Failed to extract subscription ID from JSON");
+            }
+            return null;
+        }
+
+        private DateTime? GetDateFromJson(JsonElement el, string prop)
+        {
+            if (el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number)
+            {
+                var ts = v.GetInt64();
+                if (ts > 0)
+                    return DateTimeOffset.FromUnixTimeSeconds(ts).UtcDateTime;
+            }
+            return null;
+        }
+
+        private string ExtractPaymentIntentId(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var obj = doc.RootElement.GetProperty("data").GetProperty("object");
+                if (obj.TryGetProperty("payment_intent", out var piProp))
+                {
+                    if (piProp.ValueKind == JsonValueKind.String)
+                        return piProp.GetString();
+                    if (piProp.ValueKind == JsonValueKind.Object && piProp.TryGetProperty("id", out var piId))
+                        return piId.GetString();
+                }
             }
             catch { }
             return null;
@@ -106,41 +146,64 @@ namespace Server.Controllers
         private async Task HandleInvoicePaymentSucceeded(Event stripeEvent, string rawJson)
         {
             var invoice = stripeEvent.Data.Object as Invoice;
-            if (invoice == null) return;
+            if (invoice == null)
+            {
+                _logger.LogWarning("[Stripe] invoice.payment_succeeded: Invoice object is null");
+                return;
+            }
 
             var subId = GetSubIdFromJson(rawJson);
-            if (string.IsNullOrEmpty(subId)) return;
+            if (string.IsNullOrEmpty(subId))
+            {
+                _logger.LogWarning("[Stripe] invoice.payment_succeeded: No subscription ID found. EventId: {EventId}", stripeEvent.Id);
+                return;
+            }
 
             var order = await _unitOfWork.OrderRepository.GetFirstOrDefaultAsync(o => o.SubscriptionId == subId);
-            if (order == null) return;
+            if (order == null)
+            {
+                _logger.LogWarning("[Stripe] invoice.payment_succeeded: No order found for subscription {SubId}. EventId: {EventId}", subId, stripeEvent.Id);
+                return;
+            }
 
-            order.Amount = (decimal)(invoice.AmountPaid / 100M);
+            var amountPaid = invoice.AmountPaid / 100M;
+
+            order.Amount = (decimal)amountPaid;
             order.Status = "Completed";
             order.LastStripeEvent = "invoice.payment_succeeded";
             order.FailedPaymentAttempts = 0;
             order.StripeInvoiceUrl = invoice.HostedInvoiceUrl;
             order.NextBillingDate = DateTime.UtcNow.AddMonths(1);
 
-            _unitOfWork.OrderRepository.Update(order);
+            using var doc = JsonDocument.Parse(rawJson);
+            var obj = doc.RootElement.GetProperty("data").GetProperty("object");
+
+            var periodStartTs = GetLongFromJson(obj, "period_start");
+            var periodEndTs = GetLongFromJson(obj, "period_end");
+            var periodStart = periodStartTs.HasValue ? DateTimeOffset.FromUnixTimeSeconds(periodStartTs.Value).UtcDateTime : DateTime.UtcNow;
+            var periodEnd = periodEndTs.HasValue ? DateTimeOffset.FromUnixTimeSeconds(periodEndTs.Value).UtcDateTime : DateTime.UtcNow;
+
+            var paymentIntentId = ExtractPaymentIntentId(rawJson);
 
             var paymentHistory = new PaymentHistory
             {
                 OrderId = order.Id,
                 UserId = order.UserId,
                 DealerId = order.DealerId,
-                Amount = (decimal)(invoice.AmountPaid / 100M),
+                Amount = (decimal)amountPaid,
                 Currency = order.Currency,
                 Status = "paid",
                 StripeInvoiceId = invoice.Id,
                 StripeInvoiceUrl = invoice.HostedInvoiceUrl,
-                StripePaymentIntentId = string.Empty,
+                StripePaymentIntentId = paymentIntentId ?? string.Empty,
                 CreatedAt = DateTime.UtcNow,
                 PaidAt = DateTime.UtcNow,
                 FailedAttempts = 0,
                 Description = $"Monthly subscription - {order.ServiceType}",
-                Notes = $"Period: {invoice.PeriodStart:yyyy-MM-dd} to {invoice.PeriodEnd:yyyy-MM-dd}"
+                Notes = $"Period: {periodStart:yyyy-MM-dd} to {periodEnd:yyyy-MM-dd}"
             };
 
+            _unitOfWork.OrderRepository.Update(order);
             _unitOfWork.PaymentHistoryRepository.Add(paymentHistory);
             await _unitOfWork.SaveAsync();
 
@@ -152,25 +215,41 @@ namespace Server.Controllers
             {
                 dealer.IsActive = true;
                 _unitOfWork.DealerRepository.Update(dealer);
+                await _unitOfWork.SaveAsync();
             }
 
-            await _unitOfWork.SaveAsync();
+            _logger.LogInformation("[Stripe] invoice.payment_succeeded: Payment ${Amount} recorded for user {UserId}, subscription {SubId}. PaymentIntent: {PI}",
+                amountPaid, order.UserId, subId, paymentIntentId);
         }
 
         private async Task HandleInvoicePaymentFailed(Event stripeEvent, string rawJson)
         {
             var invoice = stripeEvent.Data.Object as Invoice;
-            if (invoice == null) return;
+            if (invoice == null)
+            {
+                _logger.LogWarning("[Stripe] invoice.payment_failed: Invoice object is null");
+                return;
+            }
 
             var subId = GetSubIdFromJson(rawJson);
-            if (string.IsNullOrEmpty(subId)) return;
+            if (string.IsNullOrEmpty(subId))
+            {
+                _logger.LogWarning("[Stripe] invoice.payment_failed: No subscription ID found. EventId: {EventId}", stripeEvent.Id);
+                return;
+            }
 
             var order = await _unitOfWork.OrderRepository.GetFirstOrDefaultAsync(o => o.SubscriptionId == subId);
-            if (order == null) return;
+            if (order == null)
+            {
+                _logger.LogWarning("[Stripe] invoice.payment_failed: No order found for subscription {SubId}", subId);
+                return;
+            }
 
             order.FailedPaymentAttempts += 1;
             order.Status = "Payment Failed";
             order.LastStripeEvent = "invoice.payment_failed";
+
+            var paymentIntentId = ExtractPaymentIntentId(rawJson);
 
             var paymentHistory = new PaymentHistory
             {
@@ -182,7 +261,7 @@ namespace Server.Controllers
                 Status = "failed",
                 StripeInvoiceId = invoice.Id,
                 StripeInvoiceUrl = invoice.HostedInvoiceUrl,
-                StripePaymentIntentId = string.Empty,
+                StripePaymentIntentId = paymentIntentId ?? string.Empty,
                 CreatedAt = DateTime.UtcNow,
                 FailedAttempts = order.FailedPaymentAttempts,
                 Description = $"Monthly subscription - {order.ServiceType} (Payment Failed)",
@@ -209,15 +288,26 @@ namespace Server.Controllers
             _unitOfWork.OrderRepository.Update(order);
             _unitOfWork.PaymentHistoryRepository.Add(paymentHistory);
             await _unitOfWork.SaveAsync();
+
+            _logger.LogWarning("[Stripe] invoice.payment_failed: Order {OrderId}, attempt {Attempt}/3, status: {Status}",
+                order.Id, order.FailedPaymentAttempts, order.Status);
         }
 
         private async Task HandleSubscriptionUpdated(Event stripeEvent, string rawJson)
         {
             var sub = stripeEvent.Data.Object as Subscription;
-            if (sub == null) return;
+            if (sub == null)
+            {
+                _logger.LogWarning("[Stripe] customer.subscription.updated: Subscription object is null");
+                return;
+            }
 
             var order = await _unitOfWork.OrderRepository.GetFirstOrDefaultAsync(o => o.SubscriptionId == sub.Id);
-            if (order == null) return;
+            if (order == null)
+            {
+                _logger.LogWarning("[Stripe] customer.subscription.updated: No order found for subscription {SubId}", sub.Id);
+                return;
+            }
 
             order.Status = sub.Status switch
             {
@@ -260,15 +350,26 @@ namespace Server.Controllers
 
             _unitOfWork.OrderRepository.Update(order);
             await _unitOfWork.SaveAsync();
+
+            _logger.LogInformation("[Stripe] customer.subscription.updated: Order {OrderId}, status: {Status}, cancelAtPeriodEnd: {Cancel}",
+                order.Id, order.Status, order.CancelAtPeriodEnd);
         }
 
         private async Task HandleSubscriptionCreated(Event stripeEvent, string rawJson)
         {
             var sub = stripeEvent.Data.Object as Subscription;
-            if (sub == null) return;
+            if (sub == null)
+            {
+                _logger.LogWarning("[Stripe] customer.subscription.created: Subscription object is null");
+                return;
+            }
 
             var order = await _unitOfWork.OrderRepository.GetFirstOrDefaultAsync(o => o.SubscriptionId == sub.Id);
-            if (order == null) return;
+            if (order == null)
+            {
+                _logger.LogWarning("[Stripe] customer.subscription.created: No order found for subscription {SubId}", sub.Id);
+                return;
+            }
 
             using var doc = JsonDocument.Parse(rawJson);
             var obj = doc.RootElement.GetProperty("data").GetProperty("object");
@@ -298,10 +399,18 @@ namespace Server.Controllers
         private async Task HandleSubscriptionDeleted(Event stripeEvent, string rawJson)
         {
             var sub = stripeEvent.Data.Object as Subscription;
-            if (sub == null) return;
+            if (sub == null)
+            {
+                _logger.LogWarning("[Stripe] customer.subscription.deleted: Subscription object is null");
+                return;
+            }
 
             var order = await _unitOfWork.OrderRepository.GetFirstOrDefaultAsync(o => o.SubscriptionId == sub.Id);
-            if (order == null) return;
+            if (order == null)
+            {
+                _logger.LogWarning("[Stripe] customer.subscription.deleted: No order found for subscription {SubId}", sub.Id);
+                return;
+            }
 
             order.Status = "Cancelled";
             order.CancelledAt = DateTime.UtcNow;
@@ -328,15 +437,26 @@ namespace Server.Controllers
             }
 
             await _unitOfWork.SaveAsync();
+
+            _logger.LogInformation("[Stripe] customer.subscription.deleted: Order {OrderId} cancelled. Reason: {Reason}",
+                order.Id, order.CancellationReason ?? "Unknown");
         }
 
         private async Task HandleChargeRefunded(Event stripeEvent)
         {
             var charge = stripeEvent.Data.Object as Charge;
-            if (charge == null) return;
+            if (charge == null)
+            {
+                _logger.LogWarning("[Stripe] charge.refunded: Charge object is null");
+                return;
+            }
 
             var order = await _unitOfWork.OrderRepository.GetFirstOrDefaultAsync(o => o.PaymentIntentId == charge.PaymentIntentId);
-            if (order == null) return;
+            if (order == null)
+            {
+                _logger.LogWarning("[Stripe] charge.refunded: No order found for PaymentIntent {PI}", charge.PaymentIntentId);
+                return;
+            }
 
             order.Status = "Refunded";
             order.LastStripeEvent = "charge.refunded";

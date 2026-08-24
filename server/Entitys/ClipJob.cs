@@ -30,6 +30,8 @@ namespace Server.Entitys
 
         public int MaxClipDuration { get; set; } = 60;
 
+        public string? AspectRatio { get; set; } = "9:16";
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime? CompletedAt { get; set; }

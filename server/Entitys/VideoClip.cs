@@ -29,6 +29,12 @@ namespace Server.Entitys
 
         public double? EngagementScore { get; set; }
 
+        public string? Hashtags { get; set; }
+
+        public string? HookText { get; set; }
+
+        public string? BestTimeToPost { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         [ForeignKey("ClipJobId")]

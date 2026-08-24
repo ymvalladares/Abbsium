@@ -766,6 +766,241 @@ namespace Server.Controllers
             });
         }
 
+        [HttpPost("sync-payments/{orderId}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> SyncPayments(Guid orderId)
+        {
+            var order = await _unitOfWork.OrderRepository.GetFirstOrDefaultAsync(o => o.Id == orderId);
+            if (order == null)
+                return NotFound("Order not found");
+            if (string.IsNullOrEmpty(order.SubscriptionId))
+                return BadRequest("Order has no subscription");
+
+            try
+            {
+                var stripeInvoiceService = new Stripe.InvoiceService();
+                var invoices = await stripeInvoiceService.ListAsync(new Stripe.InvoiceListOptions
+                {
+                    Subscription = order.SubscriptionId,
+                    Limit = 100
+                });
+
+                var synced = 0;
+                foreach (var invoice in invoices)
+                {
+                    var existing = await _unitOfWork.PaymentHistoryRepository.GetFirstOrDefaultAsync(ph => ph.StripeInvoiceId == invoice.Id);
+                    if (existing != null) continue;
+
+                    var paymentHistory = new PaymentHistory
+                    {
+                        OrderId = order.Id,
+                        UserId = order.UserId,
+                        DealerId = order.DealerId,
+                        Amount = (decimal)(invoice.AmountPaid / 100M),
+                        Currency = order.Currency,
+                        Status = invoice.Status switch
+                        {
+                            "paid" => "paid",
+                            "open" => "pending",
+                            _ => "failed"
+                        },
+                        StripeInvoiceId = invoice.Id,
+                        StripeInvoiceUrl = invoice.HostedInvoiceUrl,
+                        StripePaymentIntentId = string.Empty,
+                        CreatedAt = invoice.Created,
+                        PaidAt = invoice.Status == "paid" ? invoice.Created : null,
+                        FailedAttempts = 0,
+                        Description = $"Synced - {order.ServiceType} subscription",
+                        Notes = $"Invoice: {invoice.Number ?? "N/A"}"
+                    };
+
+                    _unitOfWork.PaymentHistoryRepository.Add(paymentHistory);
+                    synced++;
+                }
+
+                if (synced > 0)
+                {
+                    order.LastStripeEvent = "manual_sync";
+                    _unitOfWork.OrderRepository.Update(order);
+                }
+
+                await _unitOfWork.SaveAsync();
+
+                return Ok(new { message = $"Synced {synced} missing payment(s)", syncedCount = synced });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to sync payments", error = ex.Message });
+            }
+        }
+
+        [HttpGet("payment-overview")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GetPaymentOverview(
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate,
+            [FromQuery] string? status)
+        {
+            var payments = await _unitOfWork.PaymentHistoryRepository.GetAllAsync(
+                ph => (!startDate.HasValue || ph.CreatedAt >= startDate)
+                   && (!endDate.HasValue || ph.CreatedAt <= endDate)
+                   && (string.IsNullOrEmpty(status) || ph.Status == status),
+                ph => ph.Order
+            );
+
+            var totalPayments = payments.Count();
+            var totalRevenue = payments.Where(p => p.Status == "paid").Sum(p => (double)p.Amount);
+            var totalFailed = payments.Where(p => p.Status == "failed" || p.Status == "suspended").Count();
+            var totalFailedAmount = payments.Where(p => p.Status == "failed" || p.Status == "suspended").Sum(p => (double)p.Amount);
+
+            var byStatus = payments.GroupBy(p => p.Status).Select(g => new
+            {
+                status = g.Key,
+                count = g.Count(),
+                amount = g.Sum(p => (double)p.Amount)
+            }).ToList();
+
+            var byServiceType = payments.Where(p => p.Status == "paid")
+                .GroupBy(p => p.Order?.ServiceType ?? "Unknown")
+                .Select(g => new { serviceType = g.Key, count = g.Count(), amount = g.Sum(p => (double)p.Amount) })
+                .OrderByDescending(x => x.amount)
+                .ToList();
+
+            var byMonth = payments.Where(p => p.Status == "paid")
+                .GroupBy(p => new { Year = p.CreatedAt.Year, Month = p.CreatedAt.Month })
+                .Select(g => new
+                {
+                    month = $"{g.Key.Year}-{g.Key.Month:D2}",
+                    count = g.Count(),
+                    amount = g.Sum(p => (double)p.Amount)
+                })
+                .OrderBy(x => x.month)
+                .ToList();
+
+            return Ok(new
+            {
+                totalPayments,
+                totalRevenue,
+                totalFailed,
+                totalFailedAmount,
+                byStatus,
+                byServiceType,
+                byMonth
+            });
+        }
+
+        [HttpGet("user-payments")]
+        public async Task<IActionResult> GetUserPayments()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized("Invalid token");
+
+            var payments = await _unitOfWork.PaymentHistoryRepository.GetAllAsync(
+                ph => ph.UserId == userId,
+                ph => ph.Order
+            );
+
+            var activeSubscriptions = (await _unitOfWork.OrderRepository.GetAllAsync(o => o.UserId == userId && o.SubscriptionId != null))
+                .Where(o => o.Status == "Completed" || o.Status == "Trialing")
+                .Select(o => new
+                {
+                    orderId = o.Id,
+                    serviceType = o.ServiceType,
+                    planMode = o.PlanMode,
+                    status = o.Status,
+                    nextBillingDate = o.NextBillingDate,
+                    amount = o.Amount,
+                    currency = o.Currency,
+                    subscriptionId = o.SubscriptionId
+                })
+                .ToList();
+
+            var paymentsResult = payments.OrderByDescending(ph => ph.CreatedAt).Select(ph => new
+            {
+                id = ph.Id,
+                orderId = ph.OrderId,
+                amount = ph.Amount,
+                currency = ph.Currency,
+                status = ph.Status,
+                stripeInvoiceUrl = ph.StripeInvoiceUrl,
+                stripePaymentIntentId = ph.StripePaymentIntentId,
+                createdAt = ph.CreatedAt,
+                paidAt = ph.PaidAt,
+                description = ph.Description,
+                notes = ph.Notes,
+                serviceType = ph.Order?.ServiceType
+            }).ToList();
+
+            var totalSpent = payments.Where(p => p.Status == "paid").Sum(p => (double)p.Amount);
+
+            return Ok(new
+            {
+                subscriptions = activeSubscriptions,
+                payments = paymentsResult,
+                totalSpent
+            });
+        }
+
+        [HttpGet("stripe-invoices")]
+        public async Task<IActionResult> GetStripeInvoices()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized("Invalid token");
+
+            var orders = await _unitOfWork.OrderRepository.GetAllAsync(o => o.UserId == userId && !string.IsNullOrEmpty(o.SubscriptionId));
+            var subscriptionIds = orders.Select(o => o.SubscriptionId).Where(s => !string.IsNullOrEmpty(s)).Distinct().ToList();
+
+            if (subscriptionIds.Count == 0)
+                return Ok(new { invoices = new List<object>(), totalSpent = 0 });
+
+            try
+            {
+                var allInvoices = new List<dynamic>();
+                var stripeInvoiceService = new Stripe.InvoiceService();
+
+                foreach (var subId in subscriptionIds)
+                {
+                    var invoices = await stripeInvoiceService.ListAsync(new Stripe.InvoiceListOptions
+                    {
+                        Subscription = subId,
+                        Limit = 100
+                    });
+
+                    var order = orders.FirstOrDefault(o => o.SubscriptionId == subId);
+
+                    foreach (var inv in invoices)
+                    {
+                        allInvoices.Add(new
+                        {
+                            id = inv.Id,
+                            number = inv.Number ?? "N/A",
+                            amount = (decimal)(inv.AmountPaid / 100M),
+                            amountDue = (decimal)(inv.AmountDue / 100M),
+                            currency = inv.Currency?.ToUpper() ?? "USD",
+                            status = inv.Status,
+                            created = inv.Created,
+                            periodStart = inv.PeriodStart,
+                            periodEnd = inv.PeriodEnd,
+                            hostedInvoiceUrl = inv.HostedInvoiceUrl,
+                            invoicePdf = inv.InvoicePdf,
+                            paymentIntent = string.Empty,
+                            description = $"Invoice #{inv.Number ?? inv.Id}",
+                            serviceType = order?.ServiceType
+                        });
+                    }
+                }
+
+                var sorted = allInvoices.OrderByDescending(i => i.created).ToList();
+                var totalSpent = sorted.Where(i => i.status == "paid").Sum(i => (double)i.amount);
+
+                return Ok(new { invoices = sorted, totalSpent });
+            }
+            catch (StripeException ex)
+            {
+                return StatusCode(500, new { message = "Failed to fetch invoices from Stripe", error = ex.Message });
+            }
+        }
+
         [HttpGet("billing")]
         public async Task<IActionResult> GetBillingInfo()
         {

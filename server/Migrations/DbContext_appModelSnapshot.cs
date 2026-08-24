@@ -417,6 +417,9 @@ namespace Server.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("AspectRatio")
+                        .HasColumnType("longtext");
+
                     b.Property<string>("AssemblyTranscriptId")
                         .HasColumnType("longtext");
 
@@ -953,6 +956,9 @@ namespace Server.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("BestTimeToPost")
+                        .HasColumnType("longtext");
+
                     b.Property<Guid>("ClipJobId")
                         .HasColumnType("char(36)");
 
@@ -970,6 +976,12 @@ namespace Server.Migrations
 
                     b.Property<double?>("EngagementScore")
                         .HasColumnType("double");
+
+                    b.Property<string>("Hashtags")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("HookText")
+                        .HasColumnType("longtext");
 
                     b.Property<string>("S3Key")
                         .HasColumnType("longtext");

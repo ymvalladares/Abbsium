@@ -70,7 +70,57 @@ namespace Server.Services
             if (_maxParallelClips <= 0) _maxParallelClips = 3;
             EnsureJobQueueInitialized(_config);
 
+            var retentionDays = _config.GetValue<int>("Clipping:ClipRetentionDays");
+            if (retentionDays <= 0) retentionDays = 7;
+            CleanupOldClipDirs(retentionDays);
+
             _logger.LogInformation("ClippingService initialized: clipsDir={ClipsDir}, yt-dlp={YtDlp}, ffmpeg={Ffmpeg}, nvenc={Nvenc}, maxParallelClips={MaxParallelClips}", _clipsDir, _ytDlpPath ?? "NOT FOUND", _ffmpegPath ?? "NOT FOUND", _useNvenc, _maxParallelClips);
+        }
+
+        private void CleanupOldClipDirs(int retentionDays)
+        {
+            try
+            {
+                if (!Directory.Exists(_clipsDir)) return;
+                var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
+                var removed = 0;
+                foreach (var dir in Directory.GetDirectories(_clipsDir))
+                {
+                    try
+                    {
+                        if (Directory.GetLastWriteTimeUtc(dir) < cutoff)
+                        {
+                            Directory.Delete(dir, true);
+                            removed++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Could not remove old clip dir {Dir}: {Message}", dir, ex.Message);
+                    }
+                }
+                if (removed > 0)
+                    _logger.LogInformation("Cleanup: removed {Count} clip directories older than {Days} days", removed, retentionDays);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Clip dir cleanup failed: {Message}", ex.Message);
+            }
+        }
+
+        private static long GetFreeDiskSpace(string path)
+        {
+            try
+            {
+                var root = Path.GetPathRoot(Path.GetFullPath(path));
+                if (!string.IsNullOrEmpty(root))
+                {
+                    var drive = new DriveInfo(root);
+                    if (drive.IsReady) return drive.AvailableFreeSpace;
+                }
+            }
+            catch { }
+            return long.MaxValue;
         }
 
         private static bool DetectNvencCached(string ffmpegPath)
@@ -85,12 +135,13 @@ namespace Server.Services
 
         private static bool DetectNvenc(string ffmpegPath)
         {
+            var testFile = Path.Combine(Path.GetTempPath(), $"abbsium_nvenc_test_{Guid.NewGuid():N}.mp4");
             try
             {
                 var psi = new ProcessStartInfo
                 {
                     FileName = ffmpegPath,
-                    Arguments = "-hide_banner -encoders",
+                    Arguments = $"-hide_banner -f lavfi -i testsrc=duration=1:size=320x240:rate=10 -c:v h264_nvenc -preset p1 -pix_fmt yuv420p -y \"{testFile}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -100,13 +151,20 @@ namespace Server.Services
                 using var process = Process.Start(psi);
                 if (process == null) return false;
 
-                var output = process.StandardOutput.ReadToEnd();
-                process.WaitForExit(10000);
-                return output.Contains("h264_nvenc", StringComparison.OrdinalIgnoreCase);
+                process.StandardError.ReadToEnd();
+                if (!process.WaitForExit(15000)) return false;
+                if (process.ExitCode != 0) return false;
+
+                var info = new FileInfo(testFile);
+                return info.Exists && info.Length > 1024;
             }
             catch
             {
                 return false;
+            }
+            finally
+            {
+                try { if (File.Exists(testFile)) File.Delete(testFile); } catch { }
             }
         }
 
@@ -125,7 +183,7 @@ namespace Server.Services
             }
         }
 
-        private async Task<bool> IsH264VideoAsync(string videoPath)
+        private async Task<bool> IsH264VideoAsync(string videoPath, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -197,7 +255,7 @@ namespace Server.Services
             return OperatingSystem.IsWindows() ? name : plainName;
         }
 
-        public async Task<ClipJob> CreateJobAsync(string userId, string videoUrl, int maxClips, int minDuration, int maxDuration)
+        public async Task<ClipJob> CreateJobAsync(string userId, string videoUrl, int maxClips, int minDuration, int maxDuration, string? aspectRatio = null)
         {
             using var scope = _scopeFactory.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<DbContext_app>();
@@ -209,6 +267,7 @@ namespace Server.Services
                 MaxClips = maxClips,
                 MinClipDuration = minDuration,
                 MaxClipDuration = maxDuration,
+                AspectRatio = aspectRatio ?? "9:16",
                 Status = "pending",
                 Progress = 0
             };
@@ -216,7 +275,18 @@ namespace Server.Services
             context.ClipJobs.Add(job);
             await context.SaveChangesAsync();
 
-            _ = Task.Run(async () => await ProcessJobAsync(job.Id));
+            var cts = new CancellationTokenSource();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await ProcessJobAsync(job.Id, cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogInformation("Job {JobId} was cancelled", job.Id);
+                }
+            }, cts.Token);
 
             return job;
         }
@@ -243,13 +313,13 @@ namespace Server.Services
                 .ToListAsync();
         }
 
-        public async Task ProcessJobAsync(Guid jobId)
+        public async Task ProcessJobAsync(Guid jobId, CancellationToken cancellationToken = default)
         {
             EnsureJobQueueInitialized(_config);
-            await _jobQueue!.WaitAsync();
+            await _jobQueue!.WaitAsync(cancellationToken);
             try
             {
-                await ProcessJobCoreAsync(jobId);
+                await ProcessJobCoreAsync(jobId, cancellationToken);
             }
             finally
             {
@@ -257,14 +327,24 @@ namespace Server.Services
             }
         }
 
-        private async Task ProcessJobCoreAsync(Guid jobId)
+        private async Task ProcessJobCoreAsync(Guid jobId, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("=== Starting processing for job {JobId} ===", jobId);
 
             using var scope = _scopeFactory.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<DbContext_app>();
 
-            var job = await context.ClipJobs.FindAsync(jobId);
+            ClipJob? job;
+            try
+            {
+                job = await context.ClipJobs.FindAsync(new object[] { jobId }, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "=== ERROR loading clip job {JobId}: {Message} ===", jobId, ex.Message);
+                return;
+            }
+
             if (job == null)
             {
                 _logger.LogError("Job {JobId} not found", jobId);
@@ -275,69 +355,86 @@ namespace Server.Services
 
             try
             {
-                await UpdateProgress(job, "downloading", 5, "Downloading audio...");
+                await UpdateProgress(job, "downloading", 5, "Downloading audio...", cancellationToken);
                 _logger.LogInformation("Job {JobId}: Starting audio download from {Url}", jobId, job.VideoUrl);
 
-                var audioFile = await DownloadAudioOnly(job.VideoUrl, jobId, job);
+                var audioFile = await DownloadAudioOnly(job.VideoUrl, jobId, job, cancellationToken);
 
-                var preparedAudio = await PrepareAudioForTranscription(audioFile, job);
+                var preparedAudio = await PrepareAudioForTranscription(audioFile, job, cancellationToken);
                 if (preparedAudio != audioFile)
                 {
-                    await UpdateProgress(job, "extracting_audio", 15, "Preparing audio for transcription...");
+                    await UpdateProgress(job, "extracting_audio", 15, "Preparing audio for transcription...", cancellationToken);
                 }
 
-                await UpdateProgress(job, "uploading_audio", 20, "Uploading audio for transcription...");
+                await UpdateProgress(job, "uploading_audio", 20, "Uploading audio for transcription...", cancellationToken);
 
-                var transcriptResult = await TranscribeWithAssemblyAI(preparedAudio, job);
+                var transcriptResult = await TranscribeWithAssemblyAI(preparedAudio, job, cancellationToken);
 
-                await UpdateProgress(job, "analyzing", 60, "Finding best moments with AI...");
+                await UpdateProgress(job, "analyzing", 60, "Finding best moments with AI...", cancellationToken);
 
-                var highlights = await FindHighlightsWithGPT(transcriptResult.Text, job);
+                var highlights = await FindHighlightsWithGPT(transcriptResult.Text, job, cancellationToken);
 
-                await UpdateProgress(job, "generating_clips", 70, $"Downloading {highlights.Count} clip segments...");
+                await UpdateProgress(job, "generating_clips", 70, $"Downloading {highlights.Count} clip segments...", cancellationToken);
 
-                var (segmentPaths, videoPath) = await DownloadVideoSourceAsync(job.VideoUrl, jobId, job, highlights);
+                var (segmentPaths, videoPath) = await DownloadVideoSourceAsync(job.VideoUrl, jobId, job, highlights, cancellationToken);
 
-                await GenerateClips(segmentPaths, videoPath, highlights, job);
+                await GenerateClips(segmentPaths, videoPath, highlights, job, cancellationToken);
 
-                await UpdateProgress(job, "completed", 100, "All clips ready!");
+                await UpdateProgress(job, "completed", 100, "All clips ready!", cancellationToken);
 
                 job.Status = "completed";
                 job.CompletedAt = DateTime.UtcNow;
-                await context.SaveChangesAsync();
+                await context.SaveChangesAsync(cancellationToken);
 
-                await _hubContext.Clients.User(job.UserId).SendAsync("ClipJobCompleted", job.Id);
+                await _hubContext.Clients.User(job.UserId).SendAsync("ClipJobCompleted", job.Id, cancellationToken);
                 _logger.LogInformation("=== Job {JobId} completed successfully ===", jobId);
 
                 CleanupTempFiles(jobId);
             }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Job {JobId} was cancelled during processing", jobId);
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "=== ERROR processing clip job {JobId}: {Message} ===", jobId, ex.Message);
-                await UpdateProgress(job, "failed", 0, ex.Message);
-                await _hubContext.Clients.User(job.UserId).SendAsync("ClipJobFailed", jobId, ex.Message);
+                await UpdateProgress(job, "failed", 0, ex.Message, cancellationToken);
+                await _hubContext.Clients.User(job.UserId).SendAsync("ClipJobFailed", jobId, ex.Message, cancellationToken);
                 CleanupTempFiles(jobId);
             }
         }
 
-        private async Task UpdateProgress(ClipJob job, string status, int progress, string? message = null)
+        private async Task UpdateProgress(ClipJob job, string status, int progress, string? message = null, CancellationToken cancellationToken = default)
         {
             using var scope = _scopeFactory.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<DbContext_app>();
 
-            var current = await context.ClipJobs.FindAsync(job.Id);
+            var current = await context.ClipJobs.FindAsync(new object[] { job.Id }, cancellationToken);
             if (current == null) return;
 
             current.Status = status;
             current.Progress = progress;
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(cancellationToken);
 
             var payload = new { jobId = job.Id, status, progress, message };
-            await _hubContext.Clients.User(job.UserId).SendAsync("ClipJobProgress", payload);
+            await _hubContext.Clients.User(job.UserId).SendAsync("ClipJobProgress", payload, cancellationToken);
             _logger.LogInformation("Job {JobId}: {Status} - {Progress}% - {Message}", job.Id, status, progress, message);
         }
 
-        private async Task<string> DownloadAudioOnly(string videoUrl, Guid jobId, ClipJob job)
+        private async Task<string> GetYtDlpVersionAsync()
+        {
+            try
+            {
+                var result = await RunProcess(_ytDlpPath, "--version", default);
+                if (result.Success && !string.IsNullOrEmpty(result.Output))
+                    return result.Output.Trim();
+            }
+            catch { }
+            return string.Empty;
+        }
+
+        private async Task<string> DownloadAudioOnly(string videoUrl, Guid jobId, ClipJob job, CancellationToken cancellationToken = default)
         {
             var jobDir = Path.Combine(_tempDir, jobId.ToString());
             Directory.CreateDirectory(jobDir);
@@ -345,29 +442,75 @@ namespace Server.Services
             var cookiesFile = _config["Youtube:CookiesFile"];
             var cookiesArg = !string.IsNullOrEmpty(cookiesFile) && File.Exists(cookiesFile) ? $"--cookies \"{cookiesFile}\" " : "";
 
-            _logger.LogInformation("Job {JobId}: Running yt-dlp (audio only) for URL: {Url}", jobId, videoUrl);
+            var maxRetries = 6;
+            Exception? lastException = null;
 
-            var outputTemplate = Path.Combine(jobDir, "audio.%(ext)s");
-            var ytDlpArgs = $"--no-playlist -f \"bestaudio[ext=m4a]/bestaudio\" {cookiesArg}-o \"{outputTemplate}\" \"{videoUrl}\"";
-            var ytDlpResult = await RunProcess(_ytDlpPath, ytDlpArgs);
-
-            var audioPath = FindDownloadedFile(jobDir, "audio");
-            if (audioPath == null)
+            var clientConfigs = new[]
             {
-                _logger.LogWarning("Job {JobId}: Audio-only download failed, trying fallback format...", jobId);
-                var fallbackArgs = $"--no-playlist -f best {cookiesArg}-o \"{outputTemplate}\" \"{videoUrl}\"";
-                ytDlpResult = await RunProcess(_ytDlpPath, fallbackArgs);
-                audioPath = FindDownloadedFile(jobDir, "audio");
+                new { Label = "web", Args = "", Format = "bestaudio[ext=m4a]/bestaudio/best" },
+                new { Label = "web_safari", Args = "--extractor-args \"youtube:player_client=web_safari\"", Format = "bestaudio/best" },
+                new { Label = "android", Args = "--extractor-args \"youtube:player_client=android\"", Format = "bestaudio/best" },
+                new { Label = "ios", Args = "--extractor-args \"youtube:player_client=ios\"", Format = "bestaudio/best" },
+                new { Label = "tv", Args = "--extractor-args \"youtube:player_client=tv\"", Format = "bestaudio/best" },
+                new { Label = "web_any", Args = "", Format = "best" }
+            };
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                var configIndex = Math.Min(attempt - 1, clientConfigs.Length - 1);
+                var config = clientConfigs[configIndex];
+
+                _logger.LogInformation("Job {JobId}: yt-dlp audio attempt {Attempt}/{Max} (config: {Config}, format: {Format})", jobId, attempt, maxRetries, config.Label, config.Format);
+
+                var outputTemplate = Path.Combine(jobDir, "audio.%(ext)s");
+                var ytDlpArgs = $"--no-playlist -f \"{config.Format}\" " +
+                    $"--geo-bypass --force-ipv4 --no-check-certificates " +
+                    $"--user-agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\" " +
+                    $"{cookiesArg}" +
+                    $"{config.Args} " +
+                    $"-o \"{outputTemplate}\" \"{videoUrl}\"";
+
+                var ytDlpResult = await RunProcess(_ytDlpPath, ytDlpArgs, cancellationToken);
+
+                var audioPath = FindDownloadedFile(jobDir, "audio");
+                if (audioPath != null && new FileInfo(audioPath).Length > 1024)
+                {
+                    var fileSize = new FileInfo(audioPath).Length;
+                    _logger.LogInformation("Job {JobId}: Audio downloaded on attempt {Attempt} ({Config}). Size: {Size} bytes", jobId, attempt, config.Label, fileSize);
+                    return audioPath;
+                }
+
+                lastException = new Exception($"yt-dlp ({config.Label}) failed: {ytDlpResult.Error.Substring(0, Math.Min(500, ytDlpResult.Error.Length))}");
+                _logger.LogWarning("Job {JobId}: Audio attempt {Attempt} failed ({Config}, {Format}): {Error}", jobId, attempt, config.Label, config.Format, lastException.Message);
+
+                if (attempt < maxRetries)
+                {
+                    var delayMs = (int)Math.Pow(3, attempt) * 1000;
+                    await Task.Delay(delayMs, cancellationToken);
+                }
             }
 
-            if (audioPath == null)
+            var isFatal = lastException != null &&
+                (lastException.Message.Contains("403") ||
+                 lastException.Message.Contains("format is not available") ||
+                 lastException.Message.Contains("Only images"));
+
+            if (isFatal)
             {
-                throw new Exception($"yt-dlp failed to download audio. Error: {ytDlpResult.Error.Substring(0, Math.Min(500, ytDlpResult.Error.Length))}");
+                _logger.LogWarning("Job {JobId}: All yt-dlp audio attempts failed. Trying full video download as fallback...", jobId);
+                try
+                {
+                    var videoPath = await DownloadFullVideo(videoUrl, jobId, job, cancellationToken);
+                    _logger.LogInformation("Job {JobId}: Fallback video downloaded, will extract audio during transcription prep", jobId);
+                    return videoPath;
+                }
+                catch (Exception fallbackEx)
+                {
+                    _logger.LogError(fallbackEx, "Job {JobId}: Fallback video download also failed", jobId);
+                }
             }
 
-            var fileSize = new FileInfo(audioPath).Length;
-            _logger.LogInformation("Job {JobId}: Audio downloaded successfully ({File}). Size: {Size} bytes", jobId, Path.GetFileName(audioPath), fileSize);
-            return audioPath;
+            throw new Exception($"yt-dlp failed to download audio after {maxRetries} attempts. Tried configs: {string.Join(", ", clientConfigs.Select(c => c.Label))}. Last error: {lastException?.Message}");
         }
 
         private static string? FindDownloadedFile(string dir, string namePrefix)
@@ -378,7 +521,7 @@ namespace Server.Services
                                   && new FileInfo(f).Length > 0);
         }
 
-        private async Task<string> PrepareAudioForTranscription(string audioPath, ClipJob job)
+        private async Task<string> PrepareAudioForTranscription(string audioPath, ClipJob job, CancellationToken cancellationToken = default)
         {
             var ext = Path.GetExtension(audioPath).ToLowerInvariant();
             var readyExtensions = new[] { ".m4a", ".mp3", ".wav", ".flac", ".aac" };
@@ -392,7 +535,7 @@ namespace Server.Services
 
             var mp3Path = Path.ChangeExtension(audioPath, ".mp3");
             var ffmpegAudioArgs = $"-i \"{audioPath}\" -vn -acodec libmp3lame -ab 128k -ar 44100 -y \"{mp3Path}\"";
-            var audioResult = await RunProcess(_ffmpegPath, ffmpegAudioArgs);
+            var audioResult = await RunProcess(_ffmpegPath, ffmpegAudioArgs, cancellationToken);
 
             if (!audioResult.Success || !File.Exists(mp3Path))
             {
@@ -405,13 +548,33 @@ namespace Server.Services
             return mp3Path;
         }
 
-        private async Task<List<string?>> DownloadVideoSegments(string videoUrl, Guid jobId, ClipJob job, List<ClipSegment> highlights)
+        private async Task<List<string?>> DownloadVideoSegments(string videoUrl, Guid jobId, ClipJob job, List<ClipSegment> highlights, CancellationToken cancellationToken = default)
         {
             var jobDir = Path.Combine(_tempDir, jobId.ToString());
             Directory.CreateDirectory(jobDir);
 
             var cookiesFile = _config["Youtube:CookiesFile"];
             var cookiesArg = !string.IsNullOrEmpty(cookiesFile) && File.Exists(cookiesFile) ? $"--cookies \"{cookiesFile}\" " : "";
+
+            var baseFlags = "--geo-bypass --force-ipv4 --no-check-certificates " +
+                $"--user-agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\" " +
+                $"--add-header \"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8\" " +
+                $"--add-header \"Accept-Language: en-US,en;q=0.9\" " +
+                $"--add-header \"Sec-Fetch-Dest: document\" " +
+                $"--add-header \"Sec-Fetch-Mode: navigate\" " +
+                $"--add-header \"Sec-Fetch-Site: none\" " +
+                $"--add-header \"Sec-Fetch-User: ?1\" " +
+                $"--add-header \"Sec-Ch-Ua: \\\"Chromium\\\";v=\\\"131\\\", \\\"Not_A Brand\\\";v=\\\"24\\\"\" " +
+                $"--add-header \"Sec-Ch-Ua-Mobile: ?0\" " +
+                $"--add-header \"Sec-Ch-Ua-Platform: \\\"Windows\\\"\" ";
+
+            var clientConfigs = new[]
+            {
+                "--extractor-args \"youtube:player_client=android\" --extractor-args \"youtube:player_skip=webpage\"",
+                "--extractor-args \"youtube:player_client=ios\"",
+                "--extractor-args \"youtube:player_client=tv\"",
+                "--extractor-args \"youtube:player_client=web\""
+            };
 
             var segmentPaths = new string?[highlights.Count];
             var semaphore = new SemaphoreSlim(3, 3);
@@ -422,76 +585,132 @@ namespace Server.Services
                 var index = i;
                 tasks.Add(Task.Run(async () =>
                 {
-                    await semaphore.WaitAsync();
+                    await semaphore.WaitAsync(cancellationToken);
                     try
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
+
                         var segment = highlights[index];
                         var segmentPath = Path.Combine(jobDir, $"segment_{index + 1}.mp4");
-                        var args = $"--no-playlist --download-sections \"*{segment.StartTime}-{segment.EndTime}\" -f \"bestvideo[ext=mp4]+bestaudio[ext=m4a]/best\" -S res:1080 {cookiesArg}-o \"{segmentPath}\" \"{videoUrl}\"";
-                        _logger.LogInformation("Job {JobId}: Downloading segment {Index} ({Start}s-{End}s): {Args}", jobId, index + 1, segment.StartTime, segment.EndTime, args);
-                        var result = await RunProcess(_ytDlpPath, args);
+                        _logger.LogInformation("Job {JobId}: Downloading segment {Index} ({Start}s-{End}s)", jobId, index + 1, segment.StartTime, segment.EndTime);
 
-                        if (result.Success && File.Exists(segmentPath) && new FileInfo(segmentPath).Length > 1024)
+                        var maxRetries = 4;
+                        for (int attempt = 1; attempt <= maxRetries; attempt++)
                         {
-                            segmentPaths[index] = segmentPath;
-                            _logger.LogInformation("Job {JobId}: Segment {Index} downloaded, size={Size} bytes", jobId, index + 1, new FileInfo(segmentPath).Length);
-                        }
-                        else
-                        {
-                            var err = result.Error.Length > 300 ? result.Error.Substring(0, 300) : result.Error;
-                            _logger.LogWarning("Job {JobId}: Segment {Index} download failed: {Error}", jobId, index + 1, err);
+                            var configIndex = Math.Min(attempt - 1, clientConfigs.Length - 1);
+                            var config = clientConfigs[configIndex];
+
+                            var args = $"--no-playlist --download-sections \"*{segment.StartTime}-{segment.EndTime}\" -f \"bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best\" -S res:1080 {baseFlags}{cookiesArg}{config} -o \"{segmentPath}\" \"{videoUrl}\"";
+
+                            var result = await RunProcess(_ytDlpPath, args, cancellationToken);
+
+                            if (File.Exists(segmentPath) && new FileInfo(segmentPath).Length > 1024)
+                            {
+                                segmentPaths[index] = segmentPath;
+                                _logger.LogInformation("Job {JobId}: Segment {Index} downloaded on attempt {Attempt}, size={Size} bytes", jobId, index + 1, attempt, new FileInfo(segmentPath).Length);
+                                break;
+                            }
+
+                            if (attempt < maxRetries)
+                            {
+                                var delayMs = (int)Math.Pow(3, attempt) * 1000;
+                                _logger.LogWarning("Job {JobId}: Segment {Index} failed on attempt {Attempt} (config {ConfigIdx}), retrying in {Delay}ms...", jobId, index + 1, attempt, configIndex + 1, delayMs);
+                                await Task.Delay(delayMs, cancellationToken);
+                            }
+                            else
+                            {
+                                var err = result.Error.Length > 300 ? result.Error.Substring(0, 300) : result.Error;
+                                _logger.LogWarning("Job {JobId}: Segment {Index} download failed after {Attempts} attempts: {Error}", jobId, index + 1, maxRetries, err);
+                            }
                         }
                     }
                     finally
                     {
                         semaphore.Release();
                     }
-                }));
+                }, cancellationToken));
             }
 
             await Task.WhenAll(tasks);
             return segmentPaths.ToList();
         }
 
-        private async Task<string> DownloadFullVideo(string videoUrl, Guid jobId, ClipJob job)
+        private async Task<string> DownloadFullVideo(string videoUrl, Guid jobId, ClipJob job, CancellationToken cancellationToken = default)
         {
             var jobDir = Path.Combine(_tempDir, jobId.ToString());
             Directory.CreateDirectory(jobDir);
 
             var videoPath = Path.Combine(jobDir, "video.mp4");
 
-            _logger.LogInformation("Job {JobId}: Running yt-dlp (full video) for URL: {Url}", jobId, videoUrl);
-
             var cookiesFile = _config["Youtube:CookiesFile"];
             var cookiesArg = !string.IsNullOrEmpty(cookiesFile) && File.Exists(cookiesFile) ? $"--cookies \"{cookiesFile}\" " : "";
 
-            var ytDlpArgs = $"--no-playlist -f \"bestvideo[ext=mp4]+bestaudio[ext=m4a]/best\" -S res:1080 {cookiesArg}-o \"{videoPath}\" \"{videoUrl}\"";
-            var ytDlpResult = await RunProcess(_ytDlpPath, ytDlpArgs);
+            var ytDlpVersion = await GetYtDlpVersionAsync();
+            if (!string.IsNullOrEmpty(ytDlpVersion))
+                _logger.LogInformation("Job {JobId}: yt-dlp version: {Version}", jobId, ytDlpVersion);
 
-            if (!File.Exists(videoPath))
+            var maxRetries = 6;
+            Exception? lastException = null;
+
+            var clientConfigs = new[]
             {
-                _logger.LogWarning("Job {JobId}: First attempt failed, trying fallback...", jobId);
-                var fallbackArgs = $"-f best {cookiesArg}-o \"{videoPath}\" \"{videoUrl}\"";
-                ytDlpResult = await RunProcess(_ytDlpPath, fallbackArgs);
+                new { Label = "web", Args = "" },
+                new { Label = "web_safari", Args = "--extractor-args \"youtube:player_client=web_safari\"" },
+                new { Label = "android", Args = "--extractor-args \"youtube:player_client=android\"" },
+                new { Label = "ios", Args = "--extractor-args \"youtube:player_client=ios\"" },
+                new { Label = "tv", Args = "--extractor-args \"youtube:player_client=tv\"" },
+                new { Label = "tv_embedded", Args = "--extractor-args \"youtube:player_client=tv_embedded\"" }
+            };
+
+            var formatSelectors = new[]
+            {
+                "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best",
+                "bestvideo+bestaudio/best",
+                "best"
+            };
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                var configIndex = Math.Min(attempt - 1, clientConfigs.Length - 1);
+                var config = clientConfigs[configIndex];
+                var fmtIndex = Math.Min(attempt / 2, formatSelectors.Length - 1);
+                var fmt = formatSelectors[fmtIndex];
+
+                _logger.LogInformation("Job {JobId}: yt-dlp video attempt {Attempt}/{Max} (config: {Config}, format: {Format})", jobId, attempt, maxRetries, config.Label, fmt);
+
+                var ytDlpArgs = $"--no-playlist -f \"{fmt}\" -S res:1080 " +
+                    $"--geo-bypass --force-ipv4 --no-check-certificates " +
+                    $"--user-agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\" " +
+                    $"{cookiesArg}" +
+                    $"{config.Args} " +
+                    $"-o \"{videoPath}\" \"{videoUrl}\"";
+
+                var ytDlpResult = await RunProcess(_ytDlpPath, ytDlpArgs, cancellationToken);
+
+                if (File.Exists(videoPath) && new FileInfo(videoPath).Length > 1024)
+                {
+                    var fileSize = new FileInfo(videoPath).Length;
+                    _logger.LogInformation("Job {JobId}: Video downloaded on attempt {Attempt} ({Config}). Size: {Size} bytes", jobId, attempt, config.Label, fileSize);
+                    return videoPath;
+                }
+
+                lastException = new Exception($"yt-dlp ({config.Label}) failed: {ytDlpResult.Error.Substring(0, Math.Min(500, ytDlpResult.Error.Length))}");
+                _logger.LogWarning("Job {JobId}: Video attempt {Attempt} failed ({Config}, {Format}): {Error}", jobId, attempt, config.Label, fmt, lastException.Message);
+
+                if (attempt < maxRetries)
+                {
+                    var delayMs = (int)Math.Pow(3, attempt) * 1000;
+                    await Task.Delay(delayMs, cancellationToken);
+                }
             }
 
-            if (!File.Exists(videoPath))
-            {
-                throw new Exception($"yt-dlp failed to download video. Error: {ytDlpResult.Error.Substring(0, Math.Min(500, ytDlpResult.Error.Length))}");
-            }
-
-            var fileSize = new FileInfo(videoPath).Length;
-            if (fileSize < 1024)
-                throw new Exception($"Source video is too small ({fileSize} bytes). Download likely failed.");
-
-            _logger.LogInformation("Job {JobId}: Video downloaded successfully. Size: {Size} bytes", jobId, fileSize);
-            return videoPath;
+            throw new Exception($"yt-dlp failed to download video after {maxRetries} attempts (yt-dlp version: {ytDlpVersion ?? "unknown"}). Tried configs: {string.Join(", ", clientConfigs.Select(c => c.Label))}. Last error: {lastException?.Message}");
         }
 
-        private async Task<(List<string>? SegmentPaths, string? VideoPath)> DownloadVideoSourceAsync(string videoUrl, Guid jobId, ClipJob job, List<ClipSegment> highlights)
+        private async Task<(List<string>? SegmentPaths, string? VideoPath)> DownloadVideoSourceAsync(string videoUrl, Guid jobId, ClipJob job, List<ClipSegment> highlights, CancellationToken cancellationToken = default)
         {
             var clipCount = Math.Min(highlights.Count, job.MaxClips);
-            var segments = await DownloadVideoSegments(videoUrl, jobId, job, highlights.Take(clipCount).ToList());
+            var segments = await DownloadVideoSegments(videoUrl, jobId, job, highlights.Take(clipCount).ToList(), cancellationToken);
 
             if (segments.All(s => !string.IsNullOrEmpty(s)))
             {
@@ -501,11 +720,11 @@ namespace Server.Services
 
             var okCount = segments.Count(s => !string.IsNullOrEmpty(s));
             _logger.LogWarning("Job {JobId}: Segment download incomplete ({OkCount}/{Total}), falling back to full video download...", jobId, okCount, segments.Count);
-            var videoPath = await DownloadFullVideo(videoUrl, jobId, job);
+            var videoPath = await DownloadFullVideo(videoUrl, jobId, job, cancellationToken);
             return (null, videoPath);
         }
 
-        private async Task<(bool Success, string Output, string Error)> RunProcess(string fileName, string arguments)
+        private async Task<(bool Success, string Output, string Error)> RunProcess(string fileName, string arguments, CancellationToken cancellationToken = default)
         {
             var psi = new ProcessStartInfo
             {
@@ -522,47 +741,29 @@ namespace Server.Services
 
             var outputTask = process.StandardOutput.ReadToEndAsync();
             var errorTask = process.StandardError.ReadToEndAsync();
-            await process.WaitForAsync(TimeSpan.FromMinutes(30));
 
-            return (process.ExitCode == 0, await outputTask, await errorTask);
-        }
-
-        private async Task<(bool Success, string Output, string Error)> RunProcessWithProgress(string fileName, string arguments, ClipJob job, int startProgress, int endProgress, string label)
-        {
-            var psi = new ProcessStartInfo
+            var tcs = new TaskCompletionSource<bool>();
+            using var reg = cancellationToken.Register(() =>
             {
-                FileName = fileName,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) throw new Exception($"Could not start process: {fileName}");
-
-            var progressTask = Task.Run(async () =>
-            {
-                var currentProgress = startProgress;
-                while (!process.HasExited)
-                {
-                    currentProgress = Math.Min(currentProgress + 1, endProgress - 1);
-                    await UpdateProgress(job, job.Status, currentProgress, label);
-                    await Task.Delay(1000);
-                }
+                try { process.Kill(); } catch { }
+                tcs.TrySetCanceled(cancellationToken);
             });
 
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            var errorTask = process.StandardError.ReadToEndAsync();
-            await process.WaitForAsync(TimeSpan.FromMinutes(30));
+            process.EnableRaisingEvents = true;
+            process.Exited += (s, e) => tcs.TrySetResult(true);
+            if (process.HasExited) tcs.TrySetResult(true);
 
-            await progressTask;
+            var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromMinutes(10)));
+            if (completed != tcs.Task)
+            {
+                try { process.Kill(); } catch { }
+                throw new TimeoutException("Process timed out");
+            }
 
             return (process.ExitCode == 0, await outputTask, await errorTask);
         }
 
-        private async Task<(string Text, string TranscriptId)> TranscribeWithAssemblyAI(string audioPath, ClipJob job)
+        private async Task<(string Text, string TranscriptId)> TranscribeWithAssemblyAI(string audioPath, ClipJob job, CancellationToken cancellationToken = default)
         {
             var client = _httpClientFactory.CreateClient();
             var assemblyKey = _config["AssemblyAI:ApiKey"];
@@ -584,13 +785,13 @@ namespace Server.Services
                 "application/json"
             );
 
-            var response = await client.PostAsync("https://api.assemblyai.com/v2/transcript", content);
+            var response = await client.PostAsync("https://api.assemblyai.com/v2/transcript", content, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
             var transcriptId = result.GetProperty("id").GetString() ?? throw new Exception("No transcript ID");
 
-            var completedTranscript = await PollTranscriptStatus(client, transcriptId, job);
+            var completedTranscript = await PollTranscriptStatus(client, transcriptId, job, cancellationToken);
 
             var text = completedTranscript.GetProperty("text").GetString() ?? string.Empty;
             return (text, transcriptId);
@@ -609,21 +810,23 @@ namespace Server.Services
             return result.GetProperty("upload_url").GetString() ?? throw new Exception("No upload URL");
         }
 
-        private async Task<JsonElement> PollTranscriptStatus(HttpClient client, string transcriptId, ClipJob job)
+        private async Task<JsonElement> PollTranscriptStatus(HttpClient client, string transcriptId, ClipJob job, CancellationToken cancellationToken = default)
         {
             var maxAttempts = 120;
             var delay = TimeSpan.FromSeconds(2);
 
             for (int i = 0; i < maxAttempts; i++)
             {
-                var response = await client.GetAsync($"https://api.assemblyai.com/v2/transcript/{transcriptId}");
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var response = await client.GetAsync($"https://api.assemblyai.com/v2/transcript/{transcriptId}", cancellationToken);
                 response.EnsureSuccessStatusCode();
 
-                var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+                var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
                 var status = result.GetProperty("status").GetString();
 
                 var progress = 25 + (int)((i / (double)maxAttempts) * 30);
-                await UpdateProgress(job, "transcribing", progress, $"Transcribing... ({Math.Round((i / (double)maxAttempts) * 100)}%)");
+                await UpdateProgress(job, "transcribing", progress, $"Transcribing... ({Math.Round((i / (double)maxAttempts) * 100)}%)", cancellationToken);
 
                 if (status == "completed")
                     return result;
@@ -631,27 +834,30 @@ namespace Server.Services
                 if (status == "error")
                     throw new Exception($"AssemblyAI transcription failed: {result.GetProperty("error").GetString()}");
 
-                await Task.Delay(delay);
+                await Task.Delay(delay, cancellationToken);
             }
 
             throw new Exception("Transcription timed out");
         }
 
-        private async Task<List<ClipSegment>> FindHighlightsWithGPT(string transcript, ClipJob job)
+        private async Task<List<ClipSegment>> FindHighlightsWithGPT(string transcript, ClipJob job, CancellationToken cancellationToken = default)
         {
-            await UpdateProgress(job, "analyzing", 60, "Analyzing transcript with AI...");
+            await UpdateProgress(job, "analyzing", 60, "Analyzing transcript with AI...", cancellationToken);
 
             var apiKey = _config["OpenAI:ApiKey"];
             var client = new ChatClient("gpt-4o-mini", apiKey);
 
-            var systemPrompt = @"You are an expert video content analyst. Your job is to find the most engaging, viral-worthy segments from a video transcript.
+            var systemPrompt = @"You are an expert video content analyst and viral content strategist. Your job is to find the most engaging, viral-worthy segments from a video transcript.
 
 Return ONLY a JSON array of clip segments. Each segment must have:
-- ""title"": A catchy title for the clip
-- ""description"": Brief description of what happens
+- ""title"": A catchy, click-worthy title for the clip (max 60 chars)
+- ""description"": Brief description of what happens in the clip
 - ""start_time"": Start time in seconds (MUST be different for each clip)
 - ""end_time"": End time in seconds (MUST be at least 30 seconds after start_time)
 - ""engagement_score"": Score from 0-100 based on how viral-worthy it is
+- ""hashtags"": Array of 4-5 relevant hashtags (include #fyp and #viral)
+- ""hook_text"": A compelling first-line hook to grab attention (max 40 chars)
+- ""best_time_to_post"": Best time to post this clip for maximum engagement (e.g. ""9:00 AM"", ""12:30 PM"", ""6:00 PM"")
 
 CRITICAL RULES:
 - Each clip MUST cover a DIFFERENT part of the video. Do NOT return the same timestamps.
@@ -659,6 +865,9 @@ CRITICAL RULES:
 - Spread clips across the entire video duration. First clip at the beginning, last clip near the end.
 - NEVER return start_time=0 for all clips. Distribute them: e.g., 0-45, 120-165, 300-345.
 - Return maximum 5 clips.
+- Hashtags should be relevant to the content, not generic. Always include #fyp and #viral.
+- Hook text should be a first-person or curiosity-driven statement.
+- Best time to post should vary across clips (morning, lunch, evening, night).
 - Return ONLY the JSON array, no other text";
 
             var userMessage = $"Here is the transcript:\n\n{transcript}\n\nFind the most engaging clips from this transcript.";
@@ -669,9 +878,9 @@ CRITICAL RULES:
                 new UserChatMessage(userMessage)
             };
 
-            await UpdateProgress(job, "analyzing", 65, "AI is finding the best moments...");
+            await UpdateProgress(job, "analyzing", 65, "AI is finding the best moments...", cancellationToken);
 
-            var response = await client.CompleteChatAsync(messages);
+            var response = await client.CompleteChatAsync(messages, cancellationToken: cancellationToken);
             var responseContent = response.Value.Content
                 .FirstOrDefault(c => c.Kind == ChatMessageContentPartKind.Text)?
                 .Text ?? throw new Exception("No response from GPT");
@@ -712,13 +921,29 @@ CRITICAL RULES:
                         seg.EndTime = seg.StartTime + 45;
                         _logger.LogInformation("Job {JobId}: Fixed segment '{Title}' duration from 0 to 45s", job.Id, seg.Title);
                     }
+
+                    if (seg.Hashtags == null || seg.Hashtags.Count == 0)
+                    {
+                        seg.Hashtags = new List<string> { "#viral", "#fyp", "#trending", "#foryou" };
+                    }
+
+                    if (string.IsNullOrEmpty(seg.HookText))
+                    {
+                        seg.HookText = "Wait for it...";
+                    }
+
+                    if (string.IsNullOrEmpty(seg.BestTimeToPost))
+                    {
+                        var times = new[] { "9:00 AM", "12:30 PM", "6:00 PM", "8:30 PM" };
+                        seg.BestTimeToPost = times[segments.IndexOf(seg) % times.Length];
+                    }
                 }
             }
 
             return segments;
         }
 
-        private async Task GenerateClips(List<string>? segmentPaths, string? videoPath, List<ClipSegment> highlights, ClipJob job)
+        private async Task GenerateClips(List<string>? segmentPaths, string? videoPath, List<ClipSegment> highlights, ClipJob job, CancellationToken cancellationToken = default)
         {
             var jobDir = Path.Combine(_clipsDir, job.Id.ToString());
             Directory.CreateDirectory(jobDir);
@@ -730,36 +955,52 @@ CRITICAL RULES:
                 return;
             }
 
+            var freeSpace = GetFreeDiskSpace(jobDir);
+            if (freeSpace < 2L * 1024 * 1024 * 1024)
+            {
+                var freeMb = freeSpace / (1024 * 1024);
+                throw new Exception($"Insufficient disk space ({freeMb} MB free). Delete old clips or free up disk space.");
+            }
+
             if (videoPath != null && !File.Exists(videoPath))
                 throw new Exception($"Source video not found: {videoPath}");
 
-            _logger.LogInformation("Job {JobId}: Generating {Total} clips from {Source}", job.Id, totalClips, videoPath ?? "segments");
+            _logger.LogInformation("Job {JobId}: Generating {Total} clips from {Source} (aspect ratio: {AspectRatio})", job.Id, totalClips, videoPath ?? "segments", job.AspectRatio);
 
             var maxParallel = Math.Max(1, Math.Min(_maxParallelClips, totalClips));
             using var semaphore = new SemaphoreSlim(maxParallel, maxParallel);
             var tasks = new List<Task>();
+            var successCount = 0;
 
             for (int i = 0; i < totalClips; i++)
             {
                 var index = i;
                 tasks.Add(Task.Run(async () =>
                 {
-                    await semaphore.WaitAsync();
+                    await semaphore.WaitAsync(cancellationToken);
                     try
                     {
-                        await GenerateSingleClipAsync(segmentPaths?[index], videoPath, highlights[index], job, index, totalClips, jobDir);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (await GenerateSingleClipAsync(segmentPaths?[index], videoPath, highlights[index], job, index, totalClips, jobDir, cancellationToken))
+                            Interlocked.Increment(ref successCount);
                     }
                     finally
                     {
                         semaphore.Release();
                     }
-                }));
+                }, cancellationToken));
             }
 
             await Task.WhenAll(tasks);
+
+            if (successCount == 0)
+                throw new Exception("All clips failed to generate. See server logs for ffmpeg errors.");
+
+            _logger.LogInformation("Job {JobId}: Uploading {Count} clips to S3...", job.Id, successCount);
+            await UploadClipsToS3Async(job, jobDir, cancellationToken);
         }
 
-        private async Task GenerateSingleClipAsync(string? segmentPath, string? videoPath, ClipSegment segment, ClipJob job, int index, int totalClips, string jobDir)
+        private async Task<bool> GenerateSingleClipAsync(string? segmentPath, string? videoPath, ClipSegment segment, ClipJob job, int index, int totalClips, string jobDir, CancellationToken cancellationToken = default)
         {
             using var scope = _scopeFactory.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<DbContext_app>();
@@ -769,70 +1010,79 @@ CRITICAL RULES:
 
             var duration = segment.EndTime - segment.StartTime;
             var clipProgress = 80 + (int)((index / (double)totalClips) * 20);
-            await UpdateProgress(job, "generating_clips", clipProgress, $"Generating clip {index + 1}/{totalClips}...");
+            await UpdateProgress(job, "generating_clips", clipProgress, $"Generating clip {index + 1}/{totalClips}...", cancellationToken);
 
             var sourcePath = segmentPath ?? videoPath!;
-            var useStreamCopy = await IsH264VideoAsync(sourcePath);
+            var useStreamCopy = await IsH264VideoAsync(sourcePath, cancellationToken);
+            var useNvenc = _useNvenc;
+            var aspectRatio = job.AspectRatio ?? "9:16";
 
             (bool Success, string Output, string Error) result = (false, string.Empty, string.Empty);
 
             if (segmentPath != null)
             {
-                if (useStreamCopy)
+                if (useStreamCopy && aspectRatio == "16:9")
                 {
                     var remuxArgs = $"-i \"{segmentPath}\" -c copy -movflags +faststart -y \"{clipPath}\"";
                     _logger.LogInformation("Job {JobId}: Remuxing segment for clip {Index}: {Args}", job.Id, index + 1, remuxArgs);
-                    result = await RunProcess(_ffmpegPath, remuxArgs);
+                    result = await RunProcess(_ffmpegPath, remuxArgs, cancellationToken);
 
                     if (!result.Success)
                     {
                         var err = result.Error.Length > 300 ? result.Error.Substring(0, 300) : result.Error;
-                        _logger.LogWarning("Job {JobId}: Remux failed for clip {Index}, using segment file directly: {Error}", job.Id, index + 1, err);
-                        File.Copy(segmentPath, clipPath, true);
+                        _logger.LogWarning("Job {JobId}: Remux failed for clip {Index}, re-encoding: {Error}", job.Id, index + 1, err);
+                        result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(0, duration, segmentPath, clipPath, useNvenc, aspectRatio), cancellationToken);
+
+                        if (!result.Success && useNvenc)
+                        {
+                            _logger.LogWarning("Job {JobId}: NVENC failed for clip {Index}, retrying with libx264...", job.Id, index + 1);
+                            useNvenc = false;
+                            result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(0, duration, segmentPath, clipPath, useNvenc, aspectRatio), cancellationToken);
+                        }
                     }
                 }
                 else
                 {
-                    _logger.LogInformation("Job {JobId}: Segment {Index} is not H.264, re-encoding...", job.Id, index + 1);
-                    result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(0, duration, segmentPath, clipPath));
+                    _logger.LogInformation("Job {JobId}: Re-encoding segment {Index} with aspect ratio {AR}...", job.Id, index + 1, aspectRatio);
+                    result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(0, duration, segmentPath, clipPath, useNvenc, aspectRatio), cancellationToken);
 
-                    if (!result.Success && _useNvenc)
+                    if (!result.Success && useNvenc)
                     {
                         _logger.LogWarning("Job {JobId}: NVENC failed for clip {Index}, retrying with libx264...", job.Id, index + 1);
-                        _useNvenc = false;
-                        result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(0, duration, segmentPath, clipPath));
+                        useNvenc = false;
+                        result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(0, duration, segmentPath, clipPath, useNvenc, aspectRatio), cancellationToken);
                     }
                 }
             }
-            else if (useStreamCopy)
+            else if (useStreamCopy && aspectRatio == "16:9")
             {
                 var copyArgs = $"-ss {segment.StartTime} -i \"{videoPath}\" -t {duration} -c:v copy -c:a copy -movflags +faststart -y \"{clipPath}\"";
                 _logger.LogInformation("Job {JobId}: Running FFmpeg (stream copy) for clip {Index}: {Args}", job.Id, index + 1, copyArgs);
-                result = await RunProcess(_ffmpegPath, copyArgs);
+                result = await RunProcess(_ffmpegPath, copyArgs, cancellationToken);
 
                 if (!result.Success)
                 {
                     _logger.LogWarning("Job {JobId}: Stream copy failed for clip {Index}, retrying with re-encode: {Error}", job.Id, index + 1, result.Error.Substring(0, Math.Min(300, result.Error.Length)));
-                    result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(segment.StartTime, duration, videoPath!, clipPath));
+                    result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(segment.StartTime, duration, videoPath!, clipPath, useNvenc, aspectRatio), cancellationToken);
 
-                    if (!result.Success && _useNvenc)
+                    if (!result.Success && useNvenc)
                     {
                         _logger.LogWarning("Job {JobId}: NVENC failed for clip {Index}, retrying with libx264...", job.Id, index + 1);
-                        _useNvenc = false;
-                        result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(segment.StartTime, duration, videoPath!, clipPath));
+                        useNvenc = false;
+                        result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(segment.StartTime, duration, videoPath!, clipPath, useNvenc, aspectRatio), cancellationToken);
                     }
                 }
             }
             else
             {
-                _logger.LogInformation("Job {JobId}: Full video is not H.264, re-encoding clip {Index}...", job.Id, index + 1);
-                result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(segment.StartTime, duration, videoPath!, clipPath));
+                _logger.LogInformation("Job {JobId}: Re-encoding clip {Index} with aspect ratio {AR}...", job.Id, index + 1, aspectRatio);
+                result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(segment.StartTime, duration, videoPath!, clipPath, useNvenc, aspectRatio), cancellationToken);
 
-                if (!result.Success && _useNvenc)
+                if (!result.Success && useNvenc)
                 {
                     _logger.LogWarning("Job {JobId}: NVENC failed for clip {Index}, retrying with libx264...", job.Id, index + 1);
-                    _useNvenc = false;
-                    result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(segment.StartTime, duration, videoPath!, clipPath));
+                    useNvenc = false;
+                    result = await RunProcess(_ffmpegPath, BuildClipFfmpegArgs(segment.StartTime, duration, videoPath!, clipPath, useNvenc, aspectRatio), cancellationToken);
                 }
             }
 
@@ -841,12 +1091,15 @@ CRITICAL RULES:
 
             if (clipSize < 1024)
             {
-                _logger.LogWarning("Job {JobId}: Clip {Index} is too small ({Size} bytes), skipping", job.Id, index + 1, clipSize);
-                return;
+                var err = result.Error.Length > 300 ? result.Error.Substring(0, 300) : result.Error;
+                _logger.LogWarning("Job {JobId}: Clip {Index} is too small ({Size} bytes), skipping. FFmpeg error: {Error}", job.Id, index + 1, clipSize, err);
+                return false;
             }
 
             var thumbArgs = $"-ss {duration / 2} -i \"{clipPath}\" -vframes 1 -q:v 2 -y \"{thumbnailPath}\"";
-            await RunProcess(_ffmpegPath, thumbArgs);
+            await RunProcess(_ffmpegPath, thumbArgs, cancellationToken);
+
+            var hashtagsJson = segment.Hashtags != null ? string.Join(",", segment.Hashtags) : null;
 
             var clip = new VideoClip
             {
@@ -858,22 +1111,76 @@ CRITICAL RULES:
                 DurationSeconds = duration,
                 S3Key = $"/clips/{job.Id}/clip_{index + 1}.mp4",
                 ThumbnailS3Key = $"/clips/{job.Id}/thumb_{index + 1}.jpg",
-                EngagementScore = segment.EngagementScore
+                EngagementScore = segment.EngagementScore,
+                Hashtags = hashtagsJson,
+                HookText = segment.HookText,
+                BestTimeToPost = segment.BestTimeToPost
             };
 
             context.VideoClips.Add(clip);
-            await context.SaveChangesAsync();
+            await context.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Job {JobId}: Clip {Index} saved to DB", job.Id, index + 1);
+            return true;
         }
 
-        private string BuildClipFfmpegArgs(int startTime, int duration, string videoPath, string clipPath)
+        private string BuildClipFfmpegArgs(int startTime, int duration, string videoPath, string clipPath, bool useNvenc, string? aspectRatio = null)
         {
-            var encoderArgs = _useNvenc
+            var encoderArgs = useNvenc
                 ? "-c:v h264_nvenc -preset p4 -rc vbr -cq 19 -b:v 0 -profile:v high -level 4.1 -pix_fmt yuv420p"
                 : "-c:v libx264 -preset veryfast -crf 16 -profile:v high -level 4.1 -pix_fmt yuv420p";
 
-            return $"-ss {startTime} -i \"{videoPath}\" -t {duration} {encoderArgs} -c:a aac -b:a 256k -ar 48000 -movflags +faststart \"{clipPath}\"";
+            var cropFilter = BuildCropFilter(aspectRatio ?? "9:16");
+            var filterArg = string.IsNullOrEmpty(cropFilter) ? "" : $"-vf \"{cropFilter}\" ";
+
+            return $"-ss {startTime} -i \"{videoPath}\" -t {duration} {filterArg}{encoderArgs} -c:a aac -b:a 256k -ar 48000 -movflags +faststart \"{clipPath}\"";
+        }
+
+        private string BuildCropFilter(string aspectRatio)
+        {
+            return aspectRatio switch
+            {
+                "9:16" => "crop=ih*(9/16):ih:(iw-ih*(9/16))/2:0",
+                "1:1" => "crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2",
+                "16:9" => "",
+                _ => ""
+            };
+        }
+
+        private async Task UploadClipsToS3Async(ClipJob job, string jobDir, CancellationToken cancellationToken = default)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<DbContext_app>();
+
+            var clips = await context.VideoClips
+                .Where(c => c.ClipJobId == job.Id)
+                .ToListAsync(cancellationToken);
+
+            foreach (var clip in clips)
+            {
+                if (string.IsNullOrEmpty(clip.S3Key)) continue;
+
+                var clipFileName = Path.GetFileName(clip.S3Key.TrimStart('/'));
+                var clipFilePath = Path.Combine(jobDir, clipFileName);
+
+                if (File.Exists(clipFilePath))
+                {
+                    var success = await _s3Service.UploadFileAsync(clip.S3Key, clipFilePath, "video/mp4", cancellationToken);
+                    _logger.LogInformation("Job {JobId}: Clip {ClipId} upload to S3: {Success}", job.Id, clip.Id, success ? "OK" : "FAILED");
+                }
+
+                if (!string.IsNullOrEmpty(clip.ThumbnailS3Key))
+                {
+                    var thumbFileName = Path.GetFileName(clip.ThumbnailS3Key.TrimStart('/'));
+                    var thumbFilePath = Path.Combine(jobDir, thumbFileName);
+
+                    if (File.Exists(thumbFilePath))
+                    {
+                        var success = await _s3Service.UploadFileAsync(clip.ThumbnailS3Key, thumbFilePath, "image/jpeg", cancellationToken);
+                        _logger.LogInformation("Job {JobId}: Thumbnail {ClipId} upload to S3: {Success}", job.Id, clip.Id, success ? "OK" : "FAILED");
+                    }
+                }
+            }
         }
 
         private void CleanupTempFiles(Guid jobId)
@@ -893,6 +1200,10 @@ CRITICAL RULES:
                 .FirstOrDefaultAsync(j => j.Id == jobId && j.UserId == userId);
 
             if (job == null) return;
+
+            var s3Prefix = $"/clips/{job.Id}";
+            var deletedS3 = await _s3Service.DeleteObjectsByPrefixAsync(s3Prefix.TrimStart('/'));
+            _logger.LogInformation("Job {JobId}: Deleted {Count} objects from S3", jobId, deletedS3);
 
             var jobDir = Path.Combine(_clipsDir, job.Id.ToString());
             if (Directory.Exists(jobDir))
@@ -920,6 +1231,10 @@ CRITICAL RULES:
                 return;
             }
 
+            var s3Prefix = $"/clips/{job.Id}";
+            var deletedS3 = await _s3Service.DeleteObjectsByPrefixAsync(s3Prefix.TrimStart('/'));
+            _logger.LogInformation("Job {JobId}: Deleted {Count} objects from S3", jobId, deletedS3);
+
             var jobDir = Path.Combine(_clipsDir, job.Id.ToString());
             _logger.LogInformation("Job {JobId}: Looking for clips in {Dir}, exists={Exists}", jobId, jobDir, Directory.Exists(jobDir));
 
@@ -927,12 +1242,12 @@ CRITICAL RULES:
             if (Directory.Exists(jobDir))
             {
                 var files = Directory.GetFiles(jobDir);
-                _logger.LogInformation("Job {JobId}: Found {Count} files to delete", jobId, files.Length);
+                _logger.LogInformation("Job {JobId}: Found {Count} files to delete locally", jobId, files.Length);
                 foreach (var file in files)
                 {
                     File.Delete(file);
                     deletedFiles++;
-                    _logger.LogInformation("Job {JobId}: Deleted file {File}", jobId, Path.GetFileName(file));
+                    _logger.LogInformation("Job {JobId}: Deleted local file {File}", jobId, Path.GetFileName(file));
                 }
                 Directory.Delete(jobDir, true);
                 _logger.LogInformation("Job {JobId}: Deleted directory {Dir}", jobId, jobDir);
@@ -946,7 +1261,7 @@ CRITICAL RULES:
             context.VideoClips.RemoveRange(job.Clips);
             await context.SaveChangesAsync();
 
-            _logger.LogInformation("Cleaned up {FileCount} files and {DbCount} DB records for job {JobId}", deletedFiles, clipCount, jobId);
+            _logger.LogInformation("Cleaned up {S3Count} S3 objects, {FileCount} local files and {DbCount} DB records for job {JobId}", deletedS3, deletedFiles, clipCount, jobId);
         }
     }
 
@@ -957,6 +1272,9 @@ CRITICAL RULES:
         public int StartTime { get; set; }
         public int EndTime { get; set; }
         public double EngagementScore { get; set; }
+        public List<string>? Hashtags { get; set; }
+        public string? HookText { get; set; }
+        public string? BestTimeToPost { get; set; }
     }
 
     public static class ProcessExtensions
