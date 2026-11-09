@@ -507,6 +507,43 @@ namespace Server.Migrations
                     b.ToTable("Dealers");
                 });
 
+            modelBuilder.Entity("Server.Entitys.LoginVerificationCode", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(6)
+                        .HasColumnType("varchar(6)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("FailedAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.Property<bool>("IsUsed")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("varchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LoginVerificationCodes");
+                });
+
             modelBuilder.Entity("Server.Entitys.Order", b =>
                 {
                     b.Property<Guid>("Id")
@@ -826,6 +863,9 @@ namespace Server.Migrations
 
                     b.Property<bool>("IsShort")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("MediaType")
+                        .HasColumnType("longtext");
 
                     b.Property<string>("PageId")
                         .HasColumnType("longtext");

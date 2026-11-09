@@ -15,6 +15,7 @@ namespace Server.Entitys
 
         public string S3Key { get; set; }
         public string S3Url { get; set; }
+        public string? MediaType { get; set; } // "video" or "photo"
         public string Title { get; set; }
         public string Caption { get; set; }
         public string Platforms { get; set; } // JSON array: ["Facebook", "Instagram"]

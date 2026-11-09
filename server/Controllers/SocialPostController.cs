@@ -85,6 +85,7 @@ namespace Server.Controllers
             {
                 var s3Url = request.VideoUrl ?? request.PhotoUrl ?? "";
                 var s3Key = ExtractKeyFromUrl(s3Url);
+                var mediaType = !string.IsNullOrEmpty(request.VideoUrl) ? "video" : "photo";
 
                 if (isScheduled)
                 {
@@ -93,6 +94,7 @@ namespace Server.Controllers
                         UserId = userId,
                         S3Key = s3Key,
                         S3Url = s3Url,
+                        MediaType = mediaType,
                         Title = request.Title ?? "",
                         Caption = request.Caption ?? "",
                         Platforms = System.Text.Json.JsonSerializer.Serialize(request.Platforms),

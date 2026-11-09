@@ -90,7 +90,8 @@ namespace Server.Services
                 }
 
                 var downloadUrl = s3Service.GeneratePresignedDownloadUrl(post.S3Key);
-                var isVideo = !string.IsNullOrEmpty(post.S3Url) && (post.S3Url.EndsWith(".mp4") || post.S3Url.EndsWith(".mov") || post.S3Url.EndsWith(".avi"));
+                var isVideo = post.MediaType == "video" || 
+                    (!string.IsNullOrEmpty(post.S3Url) && (post.S3Url.EndsWith(".mp4") || post.S3Url.EndsWith(".mov") || post.S3Url.EndsWith(".avi") || post.S3Url.EndsWith(".webm")));
 
                 var request = new SocialPostRequest
                 {

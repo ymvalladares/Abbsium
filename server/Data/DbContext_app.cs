@@ -43,5 +43,7 @@ namespace Server.Data
 
         public DbSet<VideoClip> VideoClips { get; set; }
 
+        public DbSet<LoginVerificationCode> LoginVerificationCodes { get; set; }
+
     }
 }
