@@ -163,22 +163,10 @@ namespace Server.Controllers
 
                     try
                     {
-                        MultiPlatformPostResult multiResult;
-                        
-                        if (bgRequest.Platforms.Count == 1)
+                        var multiResult = await orchestrator.PublishToPlatformsAsync(userId, bgRequest, sessionId);
+                        foreach (var result in multiResult.Results)
                         {
-                            var result = await orchestrator.PublishToSinglePlatformAsync(
-                                userId, bgRequest.Platforms[0], bgRequest, sessionId);
                             await SaveHistoryAsync(db, logger, userId, result);
-                            multiResult = new MultiPlatformPostResult { Results = new List<SocialPostResult> { result } };
-                        }
-                        else
-                        {
-                            multiResult = await orchestrator.PublishToPlatformsAsync(userId, bgRequest, sessionId);
-                            foreach (var result in multiResult.Results)
-                            {
-                                await SaveHistoryAsync(db, logger, userId, result);
-                            }
                         }
                         
                         var sessionIdGuid = Guid.Parse(sessionId);
